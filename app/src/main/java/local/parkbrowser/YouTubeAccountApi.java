@@ -26,11 +26,12 @@ import org.json.JSONObject;
 final class YouTubeAccountApi {
     private static final String YOUTUBE_API = "https://www.googleapis.com/youtube/v3/";
     private static final URI USER_INFO = URI.create("https://www.googleapis.com/oauth2/v3/userinfo");
+    private static final URI YOUTUBE_CHANNEL = URI.create(YOUTUBE_API + "channels"
+            + "?part=snippet&mine=true&maxResults=1&fields=items%28snippet%28title%29%29");
     private static final int MAX_RESPONSE_BYTES = 128 * 1024;
 
     record Identity(String subject, String email) {}
-    record Channel(String id, String title, String handle, String thumbnail, String likes) {}
-    record Item(String id, String title, String channel, String published, String thumbnail) {}
+    record Item(String id, String title, String channel, String published) {}
     record Page(List<Item> items, String next) {}
 
     static final class ServiceDisabledException extends IOException {
@@ -42,9 +43,9 @@ final class YouTubeAccountApi {
     enum Section {
         RECENT("", ""),
         CHANNEL_VIDEOS("", ""),
-        SUBSCRIPTIONS("subscriptions", "items(snippet(title,thumbnails,resourceId(channelId)))"),
-        PLAYLISTS("playlists", "items(id,snippet(title,thumbnails))"),
-        VIDEOS("playlistItems", "items(snippet(title,thumbnails,videoOwnerChannelTitle,resourceId(videoId)),"
+        SUBSCRIPTIONS("subscriptions", "items(snippet(title,resourceId(channelId)))"),
+        PLAYLISTS("playlists", "items(id,snippet(title))"),
+        VIDEOS("playlistItems", "items(snippet(title,videoOwnerChannelTitle,resourceId(videoId)),"
                 + "contentDetails(videoPublishedAt))");
 
         final String endpoint;
@@ -77,21 +78,10 @@ final class YouTubeAccountApi {
         return new Identity(subject, email);
     }
 
-    static Channel loadChannel(String accessToken) throws IOException, JSONException {
-        Uri request = Uri.parse(YOUTUBE_API + "channels").buildUpon()
-                .appendQueryParameter("part", "snippet,contentDetails").appendQueryParameter("mine", "true")
-                .appendQueryParameter("maxResults", "1").appendQueryParameter("fields",
-                        "items(id,snippet(title,customUrl,thumbnails),contentDetails(relatedPlaylists(likes)))").build();
-        JSONArray channels = read(URI.create(request.toString()), accessToken).optJSONArray("items");
-        if (channels == null || channels.length() == 0) {
-            return new Channel("", "", "", "", "");
-        }
-        JSONObject channel = channels.getJSONObject(0);
-        JSONObject snippet = channel.getJSONObject("snippet");
-        JSONObject details = channel.optJSONObject("contentDetails");
-        JSONObject playlists = details == null ? null : details.optJSONObject("relatedPlaylists");
-        return new Channel(channel.optString("id"), snippet.optString("title"), snippet.optString("customUrl"),
-                thumbnail(snippet), playlists == null ? "" : playlists.optString("likes"));
+    static String loadChannel(String accessToken) throws IOException, JSONException {
+        JSONArray channels = read(YOUTUBE_CHANNEL, accessToken).optJSONArray("items");
+        return channels == null || channels.length() == 0 ? ""
+                : channels.getJSONObject(0).getJSONObject("snippet").getString("title");
     }
 
     static Page readPage(String accessToken, Section section, String collectionId, String pageToken)
@@ -192,23 +182,10 @@ final class YouTubeAccountApi {
             if (!id.isEmpty() && !title.isBlank() && (section != Section.VIDEOS || BrowserAddress.isVideoId(id))) {
                 JSONObject details = item.optJSONObject("contentDetails");
                 items.add(new Item(id, title, snippet.optString("videoOwnerChannelTitle"),
-                        details == null ? "" : details.optString("videoPublishedAt"), thumbnail(snippet)));
+                        details == null ? "" : details.optString("videoPublishedAt")));
             }
         }
         return new Page(items, response.optString("nextPageToken"));
-    }
-
-    private static String thumbnail(JSONObject snippet) {
-        JSONObject sizes = snippet.optJSONObject("thumbnails");
-        if (sizes != null) {
-            for (String size : List.of("high", "medium", "default")) {
-                JSONObject picture = sizes.optJSONObject(size);
-                if (picture != null && !picture.optString("url").isBlank()) {
-                    return picture.optString("url");
-                }
-            }
-        }
-        return "";
     }
 
     private static JSONObject read(URI endpoint, String accessToken) throws IOException, JSONException {
