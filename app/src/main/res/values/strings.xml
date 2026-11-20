@@ -68,5 +68,9 @@
     <string name="updates_browser_error">Не удалось открыть страницу релизов GitHub.</string>
     <string name="send_video">На экран автомобиля</string>
     <string name="video_queued">Видео выбрано. Откройте den в Android Auto на парковке.</string>
+    <string name="video_sent">Видео отправлено на экран автомобиля.</string>
+    <string name="playback_destination">Где смотреть видео?</string>
+    <string name="watch_on_phone">Смотреть на телефоне</string>
+    <string name="watch_in_car">Смотреть в авто</string>
     <string name="video_link_needed">Выберите ссылку на видео YouTube.</string>
 </resources>

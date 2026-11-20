@@ -17,6 +17,7 @@ import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Bundle;
 import android.text.InputType;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -60,6 +61,7 @@ import org.mozilla.geckoview.WebRequestError;
 
 public class BrowserActivity extends Activity {
     private static GeckoRuntime geckoRuntime;
+    private static BrowserActivity foregroundCarBrowser;
     private static final int OPEN_YOUTUBE_ACCOUNT = 2;
     private static final String ACCOUNT_SCREEN_OPEN = "account_screen_open";
     private static final String HIDE_PARKING_TOOLBAR = "hide_parking_toolbar";
@@ -89,6 +91,8 @@ public class BrowserActivity extends Activity {
     private GeckoView phoneView;
     private GeckoSession phoneSession;
     private MediaSession phoneMedia;
+    private AlertDialog playbackDestinationDialog;
+    private String phonePlaybackVideoId;
     private boolean phoneCanGoBack;
     private boolean phoneFullscreen;
     private SharedPreferences settings;
@@ -169,6 +173,10 @@ public class BrowserActivity extends Activity {
         super.onResume();
         resumed = true;
         if (isCarActivity()) {
+            Display display = getDisplay();
+            if (display != null && display.getDisplayId() != Display.DEFAULT_DISPLAY) {
+                foregroundCarBrowser = this;
+            }
             deviceState.registerOnSharedPreferenceChangeListener(videoSelection);
             if (!playSelectedVideo()) {
                 applyToolbarSettings();
@@ -192,10 +200,14 @@ public class BrowserActivity extends Activity {
     protected void onPause() {
         resumed = false;
         if (isCarActivity()) {
+            if (foregroundCarBrowser == this) {
+                foregroundCarBrowser = null;
+            }
             deviceState.unregisterOnSharedPreferenceChangeListener(videoSelection);
         }
         exitFullscreen();
         if (phoneSession != null) {
+            dismissPlaybackDestination();
             pausePhoneMedia();
             if (phoneFullscreen) {
                 phoneSession.exitFullScreen();
@@ -519,8 +531,13 @@ public class BrowserActivity extends Activity {
 
     private void queueVideo(String video) {
         pausePhoneMedia();
+        sendVideoToCar(video);
+    }
+
+    private void sendVideoToCar(String video) {
+        int message = foregroundCarBrowser == null ? R.string.video_queued : R.string.video_sent;
         deviceState.edit().putString(SELECTED_VIDEO, video).apply();
-        Toast.makeText(this, R.string.video_queued, Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
     private boolean playSelectedVideo() {
@@ -668,6 +685,8 @@ public class BrowserActivity extends Activity {
         GeckoSession discarded = phoneSession;
         phoneSession = null;
         phoneMedia = null;
+        phonePlaybackVideoId = null;
+        dismissPlaybackDestination();
         phoneCanGoBack = false;
         setPhoneFullscreen(false);
         if (phoneView != null) {
@@ -684,6 +703,32 @@ public class BrowserActivity extends Activity {
     private void pausePhoneMedia() {
         if (phoneMedia != null) {
             phoneMedia.pause();
+        }
+    }
+
+    private void choosePlaybackDestination(GeckoSession session, MediaSession media, String video) {
+        CharSequence[] options = {getString(R.string.watch_on_phone), getString(R.string.watch_in_car)};
+        playbackDestinationDialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.playback_destination)
+                .setItems(options, (dialog, choice) -> {
+                    if (!resumed || session != phoneSession || !video.equals(BrowserAddress.sharedVideoId(currentUrl))) {
+                        return;
+                    }
+                    if (choice == 0) {
+                        phonePlaybackVideoId = video;
+                        media.play();
+                    } else {
+                        sendVideoToCar(video);
+                    }
+                })
+                .create();
+        playbackDestinationDialog.setOnDismissListener(dialog -> playbackDestinationDialog = null);
+        playbackDestinationDialog.show();
+    }
+
+    private void dismissPlaybackDestination() {
+        if (playbackDestinationDialog != null) {
+            playbackDestinationDialog.dismiss();
         }
     }
 
@@ -857,6 +902,14 @@ public class BrowserActivity extends Activity {
         }
     }
 
+    private void updatePhoneLocation(String url) {
+        if (phonePlaybackVideoId != null && !phonePlaybackVideoId.equals(BrowserAddress.sharedVideoId(url))) {
+            phonePlaybackVideoId = null;
+        }
+        currentUrl = url;
+        updatePhoneAddress();
+    }
+
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
@@ -885,8 +938,7 @@ public class BrowserActivity extends Activity {
         public void onLocationChange(GeckoSession session, String url,
                 List<GeckoSession.PermissionDelegate.ContentPermission> permissions, Boolean hasUserGesture) {
             if (session == phoneSession && BrowserAddress.isHttps(url)) {
-                currentUrl = url;
-                updatePhoneAddress();
+                updatePhoneLocation(url);
             }
         }
 
@@ -903,8 +955,7 @@ public class BrowserActivity extends Activity {
             if (session == phoneSession) {
                 address.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0);
                 if (BrowserAddress.isHttps(url)) {
-                    currentUrl = url;
-                    updatePhoneAddress();
+                    updatePhoneLocation(url);
                     errorPanel.setVisibility(View.GONE);
                     resetNotice();
                 }
@@ -978,8 +1029,23 @@ public class BrowserActivity extends Activity {
 
         @Override
         public void onPlay(GeckoSession session, MediaSession media) {
-            if (session == phoneSession && !resumed) {
+            if (session != phoneSession) {
+                return;
+            }
+            if (!resumed) {
                 media.pause();
+                return;
+            }
+            if (foregroundCarBrowser == null) {
+                return;
+            }
+            String video = BrowserAddress.sharedVideoId(currentUrl);
+            if (video == null || video.equals(phonePlaybackVideoId)) {
+                return;
+            }
+            media.pause();
+            if (playbackDestinationDialog == null) {
+                choosePlaybackDestination(session, media, video);
             }
         }
     }
