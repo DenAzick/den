@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">den</string>
+    <string name="address_hint">Адрес или поиск на YouTube</string>
+    <string name="parking_address_hint">Ссылка или поиск на YouTube</string>
+    <string name="home">YouTube</string>
+    <string name="back">Назад</string>
+    <string name="go">Открыть</string>
+    <string name="exit_fullscreen">Выйти из полноэкранного режима</string>
+    <string name="invalid_address">Введите HTTPS-адрес или запрос для YouTube.</string>
+    <string name="blocked_link">Ссылка недоступна. Браузер открывает только HTTPS-страницы.</string>
+    <string name="load_error">Страница не загрузилась. Проверьте интернет и попробуйте снова.</string>
+    <string name="certificate_error">Ошибка сертификата. Страница заблокирована.</string>
+    <string name="webview_error">Не удалось запустить Android WebView. Проверьте обновления Android System WebView и перезапустите приложение.</string>
+    <string name="renderer_error">Страница закрылась из-за ошибки WebView.</string>
+    <string name="retry">Повторить</string>
+    <string name="browser_menu">Меню браузера</string>
+    <string name="youtube_account">YouTube с аккаунтом</string>
+    <string name="youtube_account_phone">YouTube с аккаунтом на телефоне</string>
+    <string name="account_in_browser">Вход в аккаунт YouTube открывается через меню браузера на телефоне.</string>
+    <string name="no_external_browser">Не удалось открыть YouTube в браузере телефона.</string>
+    <string name="parking_show_toolbar">На парковке · Показать панель</string>
+    <string name="parking_hide_toolbar">На парковке · Скрыть панель</string>
+    <string name="parking_menu_hint">Удерживайте для настроек парковки</string>
+    <string name="parking_hide_on_start">Скрывать панель при запуске</string>
+    <string name="parking_youtube_only">На парковочном экране доступны ссылки и поиск YouTube.</string>
+    <string name="parking_hide_label">Скрыть надпись «На парковке»</string>
+    <string name="toolbar_show">Показать панель</string>
+    <string name="toolbar_hide">Скрыть панель</string>
+    <string name="demo_mode">Демонстрация на телефоне</string>
+    <string name="demo_menu_hint">Удерживайте для меню браузера</string>
+    <string name="updates_check">Проверить обновления</string>
+    <string name="updates_checking">Проверяю релизы GitHub…</string>
+    <string name="updates_current">Установлена актуальная версия %1$s.</string>
+    <string name="updates_available">Доступен den %1$s</string>
+    <string name="updates_install_prompt">Откройте релиз на GitHub, скачайте den.apk и подтвердите установку на телефоне.</string>
+    <string name="updates_open">Открыть GitHub</string>
+    <string name="updates_unpublished">Публичный релиз с APK пока недоступен.</string>
+    <string name="updates_failed">Проверка не удалась. Проверьте подключение к интернету и повторите попытку.</string>
+    <string name="updates_browser_error">Не удалось открыть страницу релизов GitHub.</string>
+    <string name="send_video">На экран автомобиля</string>
+    <string name="video_queued">Видео выбрано. Откройте den в Android Auto на парковке.</string>
+    <string name="video_link_needed">Выберите ссылку на видео YouTube.</string>
+</resources>
