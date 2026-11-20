@@ -626,7 +626,7 @@ public class BrowserActivity extends Activity {
     private void navigate(String destination) {
         if (BrowserAddress.isGoogleSignIn(destination)) {
             dismissAddressKeyboard();
-            showNotice(R.string.account_on_phone);
+            handleYouTubeSignIn();
             return;
         }
         if (!canOpenPage(destination)) {
@@ -677,6 +677,14 @@ public class BrowserActivity extends Activity {
 
     private void resetNotice() {
         notice.setVisibility(View.GONE);
+    }
+
+    private void handleYouTubeSignIn() {
+        if (!isCarActivity() && resumed && BrowserAddress.isYouTube(currentUrl)) {
+            openYouTubeAccount();
+        } else {
+            showNotice(R.string.account_on_phone);
+        }
     }
 
     private void showNotice(int message) {
@@ -741,7 +749,7 @@ public class BrowserActivity extends Activity {
             }
             if (BrowserAddress.isGoogleSignIn(url)) {
                 view.stopLoading();
-                showNotice(R.string.account_on_phone);
+                handleYouTubeSignIn();
                 return;
             }
             if (!canOpenPage(url)) {
@@ -775,7 +783,7 @@ public class BrowserActivity extends Activity {
                 return true;
             }
             if (BrowserAddress.isGoogleSignIn(url)) {
-                showNotice(R.string.account_on_phone);
+                handleYouTubeSignIn();
                 return true;
             }
             if (!canOpenPage(url)) {

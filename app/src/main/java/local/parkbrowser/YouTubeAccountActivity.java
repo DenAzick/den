@@ -2,7 +2,6 @@ package local.parkbrowser;
 
 import android.accounts.Account;
 import android.app.Activity;
-import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.SharedPreferences;
@@ -15,7 +14,6 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.google.android.gms.auth.api.identity.AuthorizationRequest;
 import com.google.android.gms.auth.api.identity.AuthorizationResult;
@@ -106,17 +104,11 @@ public final class YouTubeAccountActivity extends Activity {
         playlists.setText(R.string.account_playlists);
         playlists.setOnClickListener(view -> loadLibrary(Section.PLAYLISTS, null, getString(R.string.account_playlists), ""));
         library.addView(playlists);
-        LinearLayout shortcuts = new LinearLayout(this);
         Button recent = phoneButton();
         recent.setText(R.string.account_new_uploads);
         recent.setOnClickListener(view -> loadLibrary(Section.RECENT, null,
                 getString(R.string.account_recent_from_subscriptions), ""));
-        shortcuts.addView(recent, new LinearLayout.LayoutParams(0, -2, 1));
-        Button recommendations = phoneButton();
-        recommendations.setText(R.string.account_recommendations_official);
-        recommendations.setOnClickListener(view -> openOfficialYouTube());
-        shortcuts.addView(recommendations, new LinearLayout.LayoutParams(0, -2, 1));
-        library.addView(shortcuts);
+        library.addView(recent);
         panel.addView(library);
         libraryResults = new LinearLayout(this);
         libraryResults.setOrientation(LinearLayout.VERTICAL);
@@ -345,16 +337,6 @@ public final class YouTubeAccountActivity extends Activity {
                     openInBrowser(BrowserAddress.YOUTUBE_HOME + "watch?v=" + id);
                 }
             }
-        }
-    }
-
-    private void openOfficialYouTube() {
-        Intent youtube = new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/"))
-                .setPackage("com.google.android.youtube");
-        try {
-            startActivity(youtube);
-        } catch (ActivityNotFoundException exception) {
-            Toast.makeText(this, R.string.account_youtube_app_unavailable, Toast.LENGTH_LONG).show();
         }
     }
 
