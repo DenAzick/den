@@ -21,6 +21,20 @@
 
 На Redmi Note 15 Pro 5G с Android 16 проверено, что в уже подключённом сеансе Android Auto ролик продолжает играть на парковке после блокировки телефона. Проверка выполнена через эмулятор магнитолы Google. Для выбора нового ролика разблокируйте телефон.
 
+## Имитация движения в эмуляторе магнитолы
+
+1. На Windows установите **Android Auto Desktop Head Unit** и **Android SDK Platform-Tools**. На телефоне откройте den, включите сервер головного устройства в меню разработчика Android Auto и подключите разблокированный телефон по USB. [Инструкция Google для подключения через ADB](https://developer.android.com/training/cars/testing/dhu#adb-tunneling)
+2. Скачайте `dhu.ps1` из [релиза den](https://github.com/DenAzick/den/releases/latest). Запустите его в PowerShell из папки загрузки. Если путь к эмулятору отличается, укажите свой. Скорость в примере — 15 м/с (54 км/ч).
+
+   ```powershell
+   Unblock-File -LiteralPath .\dhu.ps1
+   powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\dhu.ps1 -DhuPath 'C:\Android\Sdk\extras\google\auto\desktop-head-unit.exe' -SpeedMps 15
+   ```
+
+3. На телефоне откройте **den → ⋮ → Снять ограничения в эмуляторе**. Затем откройте den в окне эмулятора и выберите ролик. Снимите отметку в меню, чтобы восстановить ограничения при имитации движения.
+
+Переключатель появляется на время сеанса, запущенного через `dhu.ps1`. Эмулятор начинает тест движения с включёнными ограничениями. Для завершения закройте его окно или нажмите `Ctrl+C` в PowerShell. Команда применяется только к окну Desktop Head Unit, запущенному сценарием. [Команды эмулятора Google](https://developer.android.com/training/cars/testing/dhu#restrictions_and_driving_status)
+
 ## Установка на Redmi
 
 1. Откройте `den.apk` из [последнего релиза](https://github.com/DenAzick/den/releases/latest) или папки `dist`. Если телефон запрашивает разрешение на установку, подтвердите его для приложения, в котором открыли APK.

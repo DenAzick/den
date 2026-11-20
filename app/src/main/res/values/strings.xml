@@ -29,6 +29,9 @@
     <string name="toolbar_hide">Скрыть панель</string>
     <string name="demo_mode">Демонстрация на телефоне</string>
     <string name="demo_menu_hint">Удерживайте для меню браузера</string>
+    <string name="dhu_unrestricted">Снять ограничения в эмуляторе</string>
+    <string name="dhu_command_queued">Команда поставлена в очередь для эмулятора.</string>
+    <string name="dhu_disconnected">Сеанс эмулятора завершён.</string>
     <string name="updates_check">Проверить обновления</string>
     <string name="updates_checking">Проверяю релизы GitHub…</string>
     <string name="updates_current">Установлена актуальная версия %1$s.</string>

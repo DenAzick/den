@@ -396,6 +396,14 @@ public class BrowserActivity extends Activity {
                         applyToolbarSettings();
                         return true;
                     });
+            if (DhuControlReceiver.isConnected()) {
+                menu.getMenu().add(R.string.dhu_unrestricted).setCheckable(true)
+                        .setChecked(DhuControlReceiver.isUnrestricted()).setOnMenuItemClickListener(item -> {
+                            boolean requested = DhuControlReceiver.toggleRestrictions();
+                            showNotice(requested ? R.string.dhu_command_queued : R.string.dhu_disconnected);
+                            return true;
+                        });
+            }
             menu.getMenu().add(R.string.updates_check).setOnMenuItemClickListener(item -> {
                 checkForUpdates(true);
                 return true;
