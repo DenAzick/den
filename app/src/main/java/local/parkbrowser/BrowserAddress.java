@@ -73,6 +73,25 @@ final class BrowserAddress {
                 || (isYouTube(value) && "/signin".equals(address.getPath()));
     }
 
+    static boolean isYouTubeAccountSection(String value) {
+        if (!isYouTube(value)) {
+            return false;
+        }
+        URI address = URI.create(value);
+        String host = address.getHost().toLowerCase(Locale.ROOT);
+        if (!host.equals("m.youtube.com") && !host.equals("www.youtube.com") && !host.equals("youtube.com")) {
+            return false;
+        }
+        String path = address.getPath();
+        if (path.endsWith("/")) {
+            path = path.substring(0, path.length() - 1);
+        }
+        return switch (path) {
+            case "/feed/you", "/feed/library", "/feed/account", "/feed/subscriptions" -> true;
+            default -> false;
+        };
+    }
+
     static String sharedVideoId(CharSequence text) {
         if (text == null || text.length() > 8_192) {
             return null;

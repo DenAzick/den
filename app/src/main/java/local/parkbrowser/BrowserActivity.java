@@ -29,6 +29,7 @@ import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
+import android.webkit.WebBackForwardList;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -52,6 +53,7 @@ import org.json.JSONException;
 public class BrowserActivity extends Activity {
     private static final int OPEN_YOUTUBE_ACCOUNT = 2;
     private static final String ACCOUNT_SCREEN_OPEN = "account_screen_open";
+    private static final String LAUNCHING_FEED = "launching_feed";
     private static final String HIDE_PARKING_TOOLBAR = "hide_parking_toolbar";
     private static final String HIDE_PARKING_LABEL = "hide_parking_label";
     private static final String PHONE_DEMO_MODE = "phone_demo_mode";
@@ -74,6 +76,7 @@ public class BrowserActivity extends Activity {
     private EditText address;
     private Button back;
     private Button parkingControls;
+    private Button browserMenu;
     private ProgressBar progress;
     private WebView webView;
     private SharedPreferences settings;
@@ -88,6 +91,7 @@ public class BrowserActivity extends Activity {
     private boolean checkingForUpdates;
     private boolean updateRequestedManually;
     private boolean accountScreenOpen;
+    private boolean launchingFeed;
     private String carVideoId;
     private String currentUrl = BrowserAddress.YOUTUBE_HOME;
 
@@ -97,6 +101,7 @@ public class BrowserActivity extends Activity {
         settings = getSharedPreferences("parkbrowser_settings", MODE_PRIVATE);
         deviceState = getSharedPreferences("den_device_state", MODE_PRIVATE);
         accountScreenOpen = state != null && state.getBoolean(ACCOUNT_SCREEN_OPEN);
+        launchingFeed = state != null && state.getBoolean(LAUNCHING_FEED);
         if (!settings.contains(HIDE_PARKING_TOOLBAR)) {
             SharedPreferences previous = getSharedPreferences("ParkedBrowserActivity", MODE_PRIVATE);
             if (previous.contains(HIDE_PARKING_TOOLBAR)) {
@@ -105,7 +110,7 @@ public class BrowserActivity extends Activity {
             }
         }
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        if (state != null && canOpenPage(state.getString("url"))) {
+        if (state != null && canOpenPage(state.getString("url")) && !isPhoneAccountPage(state.getString("url"))) {
             currentUrl = state.getString("url");
             String previousVideo = state.getString(SELECTED_VIDEO);
             if (isCarActivity() && BrowserAddress.isVideoId(previousVideo)) {
@@ -120,14 +125,16 @@ public class BrowserActivity extends Activity {
                 carVideoId = null;
                 applyToolbarSettings();
                 navigate(currentUrl);
-            } else if (webView != null && webView.canGoBack()) {
-                goBack();
-            } else {
+            } else if (!goBack()) {
                 finish();
             }
         });
         if (state == null) {
             handleSharedVideo(getIntent());
+            if (!isCarActivity() && Intent.ACTION_MAIN.equals(getIntent().getAction())) {
+                launchingFeed = true;
+                openPhoneLibrary(false, true);
+            }
         }
     }
 
@@ -204,6 +211,7 @@ public class BrowserActivity extends Activity {
         state.putString("url", currentUrl);
         state.putString(SELECTED_VIDEO, carVideoId);
         state.putBoolean(ACCOUNT_SCREEN_OPEN, accountScreenOpen);
+        state.putBoolean(LAUNCHING_FEED, launchingFeed);
         super.onSaveInstanceState(state);
     }
 
@@ -264,17 +272,23 @@ public class BrowserActivity extends Activity {
         go.setOnClickListener(view -> submitAddress());
         toolbar.addView(go, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
-        Button home = button(getString(R.string.home), null);
+        Button home = button(getString(isCarActivity() ? R.string.home : R.string.feed_tab), null);
         home.setTextSize(14);
         home.setTextColor(ACCENT);
         home.setPadding(dp(8), 0, dp(8), 0);
-        home.setOnClickListener(view -> navigate(BrowserAddress.YOUTUBE_HOME));
+        home.setOnClickListener(view -> {
+            if (isCarActivity()) {
+                navigate(BrowserAddress.YOUTUBE_HOME);
+            } else {
+                openPhoneLibrary(false, true);
+            }
+        });
         toolbar.addView(home, new LinearLayout.LayoutParams(-2, dp(48)));
 
         if (!isCarActivity()) {
-            Button menu = button("⋮", getString(R.string.browser_menu));
-            menu.setOnClickListener(view -> showBrowserMenu(menu));
-            toolbar.addView(menu, new LinearLayout.LayoutParams(dp(48), dp(48)));
+            browserMenu = button("⋮", getString(R.string.browser_menu));
+            browserMenu.setOnClickListener(view -> showBrowserMenu(browserMenu));
+            toolbar.addView(browserMenu, new LinearLayout.LayoutParams(dp(48), dp(48)));
         }
         addParkingControls();
 
@@ -422,6 +436,10 @@ public class BrowserActivity extends Activity {
     }
 
     private void openYouTubeAccount(boolean signIn) {
+        openPhoneLibrary(signIn, false);
+    }
+
+    private void openPhoneLibrary(boolean signIn, boolean feed) {
         if (isCarActivity()) {
             showNotice(R.string.account_on_phone);
             return;
@@ -429,8 +447,21 @@ public class BrowserActivity extends Activity {
         if (!accountScreenOpen) {
             accountScreenOpen = true;
             startActivityForResult(new Intent(this, YouTubeAccountActivity.class)
-                    .putExtra(YouTubeAccountActivity.CONNECT_NOW, signIn), OPEN_YOUTUBE_ACCOUNT);
+                    .putExtra(YouTubeAccountActivity.CONNECT_NOW, signIn)
+                    .putExtra(YouTubeAccountActivity.SHOW_FEED, feed), OPEN_YOUTUBE_ACCOUNT);
         }
+    }
+
+    private boolean isPhoneAccountPage(String url) {
+        return !isCarActivity() && BrowserAddress.isYouTubeAccountSection(url);
+    }
+
+    private boolean routePhoneAccountPage(String url) {
+        if (!isPhoneAccountPage(url)) {
+            return false;
+        }
+        openYouTubeAccount(false);
+        return true;
     }
 
     @Override
@@ -440,11 +471,25 @@ public class BrowserActivity extends Activity {
             return;
         }
         accountScreenOpen = false;
+        boolean startedFromLauncher = launchingFeed;
+        launchingFeed = false;
         if (!isCarActivity() && resultCode == RESULT_OK && data != null) {
-            String destination = data.getDataString();
-            if (BrowserAddress.isYouTube(destination)) {
-                navigate(destination);
+            if (data.getBooleanExtra(YouTubeAccountActivity.SHOW_BROWSER_MENU, false) && browserMenu != null) {
+                browserMenu.post(() -> showBrowserMenu(browserMenu));
+                return;
             }
+            String destination = data.getDataString();
+            if (BrowserAddress.isHttps(destination)) {
+                navigate(destination);
+                return;
+            }
+        }
+        if (startedFromLauncher) {
+            finish();
+            return;
+        }
+        if (webView != null && isPhoneAccountPage(webView.getUrl()) && !goBack()) {
+            navigate(currentUrl);
         }
     }
 
@@ -623,6 +668,11 @@ public class BrowserActivity extends Activity {
     }
 
     private void navigate(String destination) {
+        if (isPhoneAccountPage(destination)) {
+            dismissAddressKeyboard();
+            openYouTubeAccount(false);
+            return;
+        }
         if (BrowserAddress.isGoogleSignIn(destination)) {
             dismissAddressKeyboard();
             openYouTubeAccount(true);
@@ -664,12 +714,33 @@ public class BrowserActivity extends Activity {
         }
     }
 
-    private void goBack() {
-        if (webView != null && webView.canGoBack()) {
-            errorPanel.setVisibility(View.GONE);
-            resetNotice();
-            webView.goBack();
+    private int backOffset(WebView view) {
+        if (view == null || !view.canGoBack()) {
+            return 0;
         }
+        if (isCarActivity()) {
+            return -1;
+        }
+        WebBackForwardList history = view.copyBackForwardList();
+        int current = history.getCurrentIndex();
+        for (int index = current - 1; index >= 0; index--) {
+            String url = history.getItemAtIndex(index).getUrl();
+            if (!isPhoneAccountPage(url)) {
+                return index - current;
+            }
+        }
+        return 0;
+    }
+
+    private boolean goBack() {
+        int offset = backOffset(webView);
+        if (offset == 0) {
+            return false;
+        }
+        errorPanel.setVisibility(View.GONE);
+        resetNotice();
+        webView.goBackOrForward(offset);
+        return true;
     }
 
     private void resetNotice() {
@@ -736,6 +807,11 @@ public class BrowserActivity extends Activity {
             if (view != webView) {
                 return;
             }
+            if (isPhoneAccountPage(url)) {
+                view.stopLoading();
+                openYouTubeAccount(false);
+                return;
+            }
             if (!canOpenPage(url)) {
                 view.stopLoading();
                 showNotice(isCarActivity() ? R.string.parking_youtube_only : R.string.blocked_link);
@@ -761,11 +837,12 @@ public class BrowserActivity extends Activity {
             if (!request.isForMainFrame()) {
                 return false;
             }
-            if (!BrowserAddress.isHttps(request.getUrl().toString())) {
+            String url = request.getUrl().toString();
+            if (!BrowserAddress.isHttps(url)) {
                 showNotice(R.string.blocked_link);
                 return true;
             }
-            if (BrowserAddress.isGoogleSignIn(request.getUrl().toString())) {
+            if (BrowserAddress.isGoogleSignIn(url)) {
                 if (BrowserAddress.isYouTube(view.getUrl())) {
                     openYouTubeAccount(true);
                 } else {
@@ -773,7 +850,10 @@ public class BrowserActivity extends Activity {
                 }
                 return true;
             }
-            if (!canOpenPage(request.getUrl().toString())) {
+            if (routePhoneAccountPage(url)) {
+                return true;
+            }
+            if (!canOpenPage(url)) {
                 showNotice(R.string.parking_youtube_only);
                 return true;
             }
@@ -783,11 +863,14 @@ public class BrowserActivity extends Activity {
         @Override
         public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
             if (view == webView && carVideoId == null && canOpenPage(url)) {
+                if (routePhoneAccountPage(url)) {
+                    return;
+                }
                 currentUrl = url;
                 if (!address.hasFocus()) {
                     address.setText(url);
                 }
-                back.setEnabled(view.canGoBack());
+                back.setEnabled(backOffset(view) != 0);
             }
         }
 
