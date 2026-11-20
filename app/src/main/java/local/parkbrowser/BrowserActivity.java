@@ -137,6 +137,9 @@ public class BrowserActivity extends Activity {
     @Override
     protected void onStart() {
         super.onStart();
+        if (isCarActivity()) {
+            return;
+        }
         applyToolbarSettings();
         if (webView == null) {
             createWebView();
@@ -147,13 +150,19 @@ public class BrowserActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        if (isCarActivity()) {
+            deviceState.registerOnSharedPreferenceChangeListener(videoSelection);
+            if (!playSelectedVideo()) {
+                applyToolbarSettings();
+                if (webView == null) {
+                    createWebView();
+                }
+            }
+        }
         if (webView != null) {
             webView.onResume();
         }
-        if (isCarActivity()) {
-            deviceState.registerOnSharedPreferenceChangeListener(videoSelection);
-            playSelectedVideo();
-        } else if (!phoneDemoMode()) {
+        if (!isCarActivity() && !phoneDemoMode()) {
             checkForUpdates(false);
         }
     }
@@ -442,10 +451,10 @@ public class BrowserActivity extends Activity {
         Toast.makeText(this, R.string.video_queued, Toast.LENGTH_SHORT).show();
     }
 
-    private void playSelectedVideo() {
+    private boolean playSelectedVideo() {
         String video = deviceState.getString(SELECTED_VIDEO, null);
         if (!BrowserAddress.isVideoId(video)) {
-            return;
+            return false;
         }
         deviceState.edit().remove(SELECTED_VIDEO).apply();
         exitFullscreen();
@@ -457,6 +466,7 @@ public class BrowserActivity extends Activity {
         } else {
             loadPage();
         }
+        return true;
     }
 
     private void checkForUpdates(boolean manual) {
