@@ -38,59 +38,43 @@ function Invoke-BuildTool($Executable, $Arguments) {
 
 $tools = Join-Path $SdkPath 'build-tools\35.0.0'
 $androidJar = Join-Path $SdkPath 'platforms\android-35\android.jar'
-$aapt2 = Join-Path $tools 'aapt2.exe'
 $zipalign = Join-Path $tools 'zipalign.exe'
-$d8 = Join-Path $tools 'lib\d8.jar'
 $apksigner = Join-Path $tools 'lib\apksigner.jar'
 $java = Join-Path $JdkPath 'bin\java.exe'
-$javac = Join-Path $JdkPath 'bin\javac.exe'
 $keytool = Join-Path $JdkPath 'bin\keytool.exe'
-foreach ($requiredFile in @($androidJar, $aapt2, $zipalign, $d8, $apksigner, $java, $javac, $keytool)) {
+$gradle = Join-Path $PSScriptRoot 'gradlew.bat'
+foreach ($requiredFile in @($androidJar, $zipalign, $apksigner, $java, $keytool, $gradle)) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "Tool or SDK file not found: $requiredFile"
     }
 }
 
-$source = Join-Path $PSScriptRoot 'app\src\main'
 $buildRoot = Join-Path $PSScriptRoot 'build'
 $build = Join-Path $buildRoot ([Guid]::NewGuid().ToString('N'))
 $apkDir = Join-Path $PSScriptRoot 'dist'
 $keyDir = Join-Path $PSScriptRoot '.signing'
-$compiledResources = Join-Path $build 'resources.zip'
-$generated = Join-Path $build 'generated'
-$classes = Join-Path $build 'classes'
-$unsigned = Join-Path $build 'unsigned.apk'
+$unsigned = Join-Path $PSScriptRoot 'app\build\outputs\apk\release\app-release-unsigned.apk'
 $aligned = Join-Path $build 'aligned.apk'
 $signed = Join-Path $build 'signed.apk'
 $outputApk = Join-Path $apkDir 'den.apk'
 $keystore = Join-Path $keyDir 'parkbrowser.p12'
 $passwordFile = Join-Path $keyDir 'password.txt'
 
-New-Item -ItemType Directory -Force -Path $generated, $classes, $apkDir, $keyDir | Out-Null
+$previousJavaHome = $env:JAVA_HOME
+$previousAndroidHome = $env:ANDROID_HOME
+$previousAndroidSdkRoot = $env:ANDROID_SDK_ROOT
+$previousGradleHome = $env:GRADLE_USER_HOME
+
+New-Item -ItemType Directory -Force -Path $build, $apkDir, $keyDir | Out-Null
 
 try {
-    Invoke-BuildTool $aapt2 @('compile', '--dir', (Join-Path $source 'res'), '-o', $compiledResources)
-    Invoke-BuildTool $aapt2 @('link', '-I', $androidJar, '--manifest', (Join-Path $source 'AndroidManifest.xml'),
-        '--java', $generated, '-o', $unsigned, $compiledResources)
-
-    $javaFiles = @(Get-ChildItem -LiteralPath (Join-Path $source 'java'), $generated -Recurse -Filter '*.java' -File |
-        Select-Object -ExpandProperty FullName)
-    Invoke-BuildTool $javac (@('--release', '17', '-encoding', 'UTF-8', '-classpath', $androidJar, '-d', $classes) + $javaFiles)
-
-    $classFiles = @(Get-ChildItem -LiteralPath $classes -Recurse -Filter '*.class' -File | Select-Object -ExpandProperty FullName)
-    # Build Tools 35.0.0 can emit API 34-compatible DEX. The manifest requires API 35 to install.
-    Invoke-BuildTool $java (@('-cp', $d8, 'com.android.tools.r8.D8', '--release', '--min-api', '34',
-        '--lib', $androidJar, '--output', $build) + $classFiles)
-
-    Add-Type -AssemblyName System.IO.Compression
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $archive = [IO.Compression.ZipFile]::Open($unsigned, [IO.Compression.ZipArchiveMode]::Update)
-    try {
-        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, (Join-Path $build 'classes.dex'),
-            'classes.dex', [IO.Compression.CompressionLevel]::NoCompression) | Out-Null
-    } finally {
-        $archive.Dispose()
+    $env:JAVA_HOME = (Resolve-Path -LiteralPath $JdkPath).ProviderPath
+    $env:ANDROID_HOME = (Resolve-Path -LiteralPath $SdkPath).ProviderPath
+    $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+    if (-not $env:GRADLE_USER_HOME) {
+        $env:GRADLE_USER_HOME = Join-Path $PSScriptRoot '.tooling\gradle-home'
     }
+    Invoke-BuildTool $gradle @('--project-dir', $PSScriptRoot, ':app:assembleRelease', '--no-daemon', '--console=plain')
 
     Invoke-BuildTool $zipalign @('-f', '4', $unsigned, $aligned)
     if (-not (Test-Path -LiteralPath $passwordFile -PathType Leaf)) {
@@ -114,6 +98,10 @@ try {
     Move-Item -LiteralPath $signed -Destination $outputApk -Force
     Get-FileHash -LiteralPath $outputApk -Algorithm SHA256
 } finally {
+    $env:JAVA_HOME = $previousJavaHome
+    $env:ANDROID_HOME = $previousAndroidHome
+    $env:ANDROID_SDK_ROOT = $previousAndroidSdkRoot
+    $env:GRADLE_USER_HOME = $previousGradleHome
     $resolvedBuild = (Resolve-Path -LiteralPath $build).ProviderPath
     $resolvedRoot = (Resolve-Path -LiteralPath $buildRoot).ProviderPath
     if ($resolvedBuild -eq $build -and $resolvedRoot -eq $buildRoot -and

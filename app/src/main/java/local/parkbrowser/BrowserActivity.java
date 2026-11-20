@@ -50,7 +50,7 @@ import java.util.Map;
 import org.json.JSONException;
 
 public class BrowserActivity extends Activity {
-    private static final Uri YOUTUBE_ACCOUNT = Uri.parse("https://m.youtube.com/feed/subscriptions");
+    private static final int OPEN_YOUTUBE_ACCOUNT = 2;
     private static final String HIDE_PARKING_TOOLBAR = "hide_parking_toolbar";
     private static final String HIDE_PARKING_LABEL = "hide_parking_label";
     private static final String PHONE_DEMO_MODE = "phone_demo_mode";
@@ -418,7 +418,22 @@ public class BrowserActivity extends Activity {
     }
 
     private void openYouTubeAccount() {
-        openExternalPage(YOUTUBE_ACCOUNT, R.string.no_external_browser);
+        if (isCarActivity()) {
+            showNotice(R.string.account_on_phone);
+            return;
+        }
+        startActivityForResult(new Intent(this, YouTubeAccountActivity.class), OPEN_YOUTUBE_ACCOUNT);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (!isCarActivity() && requestCode == OPEN_YOUTUBE_ACCOUNT && resultCode == RESULT_OK && data != null) {
+            String destination = data.getDataString();
+            if (BrowserAddress.isYouTube(destination)) {
+                navigate(destination);
+            }
+        }
     }
 
     private void openExternalPage(Uri url, int failureMessage) {
@@ -743,7 +758,7 @@ public class BrowserActivity extends Activity {
                 return true;
             }
             if (isGoogleAccountPage(request.getUrl())) {
-                showNotice(R.string.account_in_browser);
+                showNotice(R.string.account_on_phone);
                 return true;
             }
             if (!canOpenPage(request.getUrl().toString())) {

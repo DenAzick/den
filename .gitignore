@@ -2,3 +2,6 @@
 /.tooling/
 /build/
 /dist/
+/.gradle/
+/app/build/
+/local.properties

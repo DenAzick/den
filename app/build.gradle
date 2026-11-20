@@ -1,0 +1,26 @@
+plugins {
+    id 'com.android.application' version '8.8.2'
+}
+
+android {
+    namespace = 'local.parkbrowser'
+    compileSdk = 35
+    buildToolsVersion = '35.0.0'
+
+    defaultConfig {
+        applicationId = 'local.parkbrowser'
+        minSdk = 35
+        targetSdk = 35
+        versionCode = 9
+        versionName = '1.6.0'
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.android.gms:play-services-auth:22.0.0'
+}
