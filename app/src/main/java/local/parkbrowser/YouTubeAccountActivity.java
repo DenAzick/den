@@ -2,18 +2,21 @@ package local.parkbrowser;
 
 import android.accounts.Account;
 import android.app.Activity;
-import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.google.android.gms.auth.api.identity.AuthorizationRequest;
 import com.google.android.gms.auth.api.identity.AuthorizationResult;
@@ -32,6 +35,7 @@ import local.parkbrowser.YouTubeAccountApi.Section;
 public final class YouTubeAccountActivity extends Activity {
     static final String CONNECT_NOW = "local.parkbrowser.CONNECT_NOW";
     private static final int CONSENT_REQUEST = 1;
+    private static final String PREFERENCES = "den_youtube_account";
     private static final String SAVED_SUBJECT = "subject";
     private static final String SAVED_EMAIL = "email";
     private static final String SAVED_CHANNEL = "channel";
@@ -46,13 +50,18 @@ public final class YouTubeAccountActivity extends Activity {
     private Button connect;
     private Button forget;
     private LinearLayout library;
+    private LinearLayout libraryResults;
+    private TextView libraryTitle;
+    private LinearLayout libraryItems;
+    private LinearLayout libraryFooter;
+    private int libraryRequest;
     private boolean waitingForConsent;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         // Device-local state. Backup rules include only the browser's toolbar preferences.
-        preferences = getSharedPreferences("den_youtube_account", MODE_PRIVATE);
+        preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
         waitingForConsent = state != null && state.getBoolean(CONSENT_PENDING);
         createUi();
         if (waitingForConsent) {
@@ -95,13 +104,37 @@ public final class YouTubeAccountActivity extends Activity {
         library.setOrientation(LinearLayout.VERTICAL);
         Button subscriptions = phoneButton();
         subscriptions.setText(R.string.account_subscriptions);
-        subscriptions.setOnClickListener(view -> loadLibrary(Section.SUBSCRIPTIONS, null, ""));
+        subscriptions.setOnClickListener(view -> showSubscriptions());
         library.addView(subscriptions);
         Button playlists = phoneButton();
         playlists.setText(R.string.account_playlists);
-        playlists.setOnClickListener(view -> loadLibrary(Section.PLAYLISTS, null, ""));
+        playlists.setOnClickListener(view -> loadLibrary(Section.PLAYLISTS, null, getString(R.string.account_playlists), ""));
         library.addView(playlists);
+        LinearLayout shortcuts = new LinearLayout(this);
+        Button recent = phoneButton();
+        recent.setText(R.string.account_new_uploads);
+        recent.setOnClickListener(view -> loadLibrary(Section.RECENT, null,
+                getString(R.string.account_recent_from_subscriptions), ""));
+        shortcuts.addView(recent, new LinearLayout.LayoutParams(0, -2, 1));
+        Button recommendations = phoneButton();
+        recommendations.setText(R.string.account_recommendations_official);
+        recommendations.setOnClickListener(view -> openOfficialYouTube());
+        shortcuts.addView(recommendations, new LinearLayout.LayoutParams(0, -2, 1));
+        library.addView(shortcuts);
         panel.addView(library);
+        libraryResults = new LinearLayout(this);
+        libraryResults.setOrientation(LinearLayout.VERTICAL);
+        libraryTitle = new TextView(this);
+        libraryTitle.setTextAppearance(android.R.style.TextAppearance_Material_Title);
+        libraryTitle.setAccessibilityHeading(true);
+        libraryResults.addView(libraryTitle);
+        libraryItems = new LinearLayout(this);
+        libraryItems.setOrientation(LinearLayout.VERTICAL);
+        libraryResults.addView(libraryItems);
+        libraryFooter = new LinearLayout(this);
+        libraryFooter.setOrientation(LinearLayout.VERTICAL);
+        libraryFooter.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        libraryResults.addView(libraryFooter);
         forget = phoneButton();
         forget.setText(R.string.account_forget);
         forget.setOnClickListener(view -> {
@@ -109,6 +142,7 @@ public final class YouTubeAccountActivity extends Activity {
             render(R.string.account_intro, false, false);
         });
         panel.addView(forget);
+        panel.addView(libraryResults);
         setContentView(root);
     }
 
@@ -121,6 +155,10 @@ public final class YouTubeAccountActivity extends Activity {
 
     private String savedEmail() {
         return preferences.getString(SAVED_EMAIL, null);
+    }
+
+    static boolean hasSavedAccount(Context context) {
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).contains(SAVED_EMAIL);
     }
 
     private void render(int message, boolean working, boolean connected) {
@@ -142,6 +180,12 @@ public final class YouTubeAccountActivity extends Activity {
         forget.setVisibility(email == null ? View.GONE : View.VISIBLE);
         forget.setEnabled(!working);
         library.setVisibility(connected && !working ? View.VISIBLE : View.GONE);
+        libraryResults.setVisibility(library.getVisibility());
+        if (!connected) {
+            libraryRequest++;
+            libraryItems.removeAllViews();
+            libraryFooter.removeAllViews();
+        }
     }
 
     private AuthorizationRequest authorizationRequest() {
@@ -209,14 +253,24 @@ public final class YouTubeAccountActivity extends Activity {
         return result.getGrantedScopes().contains(YOUTUBE_READONLY) ? result.getAccessToken() : null;
     }
 
-    private void loadLibrary(Section section, String playlistId, String pageToken) {
-        render(R.string.account_checking, true, true);
+    private void showSubscriptions() {
+        loadLibrary(Section.SUBSCRIPTIONS, null, getString(R.string.account_subscriptions), "");
+    }
+
+    private void loadLibrary(Section section, String collectionId, String title, String pageToken) {
+        int request = ++libraryRequest;
+        if (pageToken.isEmpty()) {
+            libraryTitle.setText(title);
+            libraryItems.removeAllViews();
+        }
+        libraryFooter.removeAllViews();
+        addLibraryStatus(R.string.account_library_loading);
         Identity.getAuthorizationClient(this).authorize(authorizationRequest()).addOnCompleteListener(task -> {
-            if (isFinishing() || isDestroyed()) {
+            if (!isLibraryRequestActive(request)) {
                 return;
             }
             if (!task.isSuccessful()) {
-                showFailure(task.getException());
+                libraryLoadFailed(section, collectionId, title, pageToken);
                 return;
             }
             AuthorizationResult result = task.getResult();
@@ -227,12 +281,16 @@ public final class YouTubeAccountActivity extends Activity {
             }
             new Thread(() -> {
                 try {
-                    YouTubeAccountApi.Page page = YouTubeAccountApi.readPage(token, section, playlistId, pageToken);
-                    runOnUiThread(() -> showLibrary(section, playlistId, page));
+                    YouTubeAccountApi.Page page = YouTubeAccountApi.readPage(token, section, collectionId, pageToken);
+                    runOnUiThread(() -> {
+                        if (isLibraryRequestActive(request)) {
+                            showLibrary(section, collectionId, title, page);
+                        }
+                    });
                 } catch (IOException | JSONException exception) {
                     runOnUiThread(() -> {
-                        if (!isFinishing() && !isDestroyed()) {
-                            render(R.string.account_library_failed, false, true);
+                        if (isLibraryRequestActive(request)) {
+                            libraryLoadFailed(section, collectionId, title, pageToken);
                         }
                     });
                 }
@@ -240,44 +298,71 @@ public final class YouTubeAccountActivity extends Activity {
         });
     }
 
-    private void showLibrary(Section section, String playlistId, YouTubeAccountApi.Page page) {
-        if (isFinishing() || isDestroyed()) {
-            return;
-        }
-        render(R.string.account_connected, false, true);
-        int title = switch (section) {
-            case SUBSCRIPTIONS -> R.string.account_subscriptions;
-            case PLAYLISTS -> R.string.account_playlists;
-            case VIDEOS -> R.string.account_playlist_videos;
-        };
-        AlertDialog.Builder dialog = new AlertDialog.Builder(this).setTitle(title)
-                .setNegativeButton(android.R.string.cancel, null);
-        if (page.items().isEmpty()) {
-            dialog.setMessage(R.string.account_empty_list);
-        } else {
-            String[] labels = page.items().stream().map(YouTubeAccountApi.Item::title).toArray(String[]::new);
-            dialog.setItems(labels, (window, index) -> openLibraryItem(section, page.items().get(index).id()));
-        }
-        if (!page.next().isEmpty()) {
-            dialog.setNeutralButton(R.string.account_next_page, (window, index) ->
-                    loadLibrary(section, playlistId, page.next()));
-        }
-        dialog.show();
+    private boolean isLibraryRequestActive(int request) {
+        return request == libraryRequest && !isFinishing() && !isDestroyed();
     }
 
-    private void openLibraryItem(Section section, String id) {
+    private void libraryLoadFailed(Section section, String collectionId, String title, String pageToken) {
+        libraryFooter.removeAllViews();
+        addLibraryStatus(R.string.account_library_failed);
+        Button retry = phoneButton();
+        retry.setText(R.string.retry);
+        retry.setOnClickListener(view -> loadLibrary(section, collectionId, title, pageToken));
+        libraryFooter.addView(retry);
+    }
+
+    private void addLibraryStatus(int message) {
+        TextView note = new TextView(this);
+        note.setText(message);
+        libraryFooter.addView(note);
+    }
+
+    private void showLibrary(Section section, String collectionId, String title, YouTubeAccountApi.Page page) {
+        libraryFooter.removeAllViews();
+        int rowPadding = Math.round(12 * getResources().getDisplayMetrics().density);
+        for (YouTubeAccountApi.Item item : page.items()) {
+            Button row = phoneButton();
+            row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            row.setPadding(rowPadding, row.getPaddingTop(), rowPadding, row.getPaddingBottom());
+            row.setText(item.channel().isBlank() ? item.title() : item.title() + "\n" + item.channel());
+            row.setOnClickListener(view -> openLibraryItem(section, item));
+            libraryItems.addView(row);
+        }
+        if (libraryItems.getChildCount() == 0) {
+            addLibraryStatus(R.string.account_empty_list);
+        }
+        if (!page.next().isEmpty()) {
+            Button more = phoneButton();
+            more.setText(section == Section.RECENT ? R.string.account_more_channels : R.string.account_next_page);
+            more.setOnClickListener(view -> loadLibrary(section, collectionId, title, page.next()));
+            libraryFooter.addView(more);
+        }
+    }
+
+    private void openLibraryItem(Section section, YouTubeAccountApi.Item item) {
+        String id = item.id();
         switch (section) {
-            case PLAYLISTS -> loadLibrary(Section.VIDEOS, id, "");
+            case PLAYLISTS -> loadLibrary(Section.VIDEOS, id, item.title(), "");
             case SUBSCRIPTIONS -> {
-                if (id.matches("UC[A-Za-z0-9_-]{22}")) {
-                    openInBrowser(BrowserAddress.YOUTUBE_HOME + "channel/" + id);
+                if (BrowserAddress.isChannelId(id)) {
+                    loadLibrary(Section.CHANNEL_VIDEOS, id, item.title(), "");
                 }
             }
-            case VIDEOS -> {
+            case RECENT, CHANNEL_VIDEOS, VIDEOS -> {
                 if (BrowserAddress.isVideoId(id)) {
                     openInBrowser(BrowserAddress.YOUTUBE_HOME + "watch?v=" + id);
                 }
             }
+        }
+    }
+
+    private void openOfficialYouTube() {
+        Intent youtube = new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/"))
+                .setPackage("com.google.android.youtube");
+        try {
+            startActivity(youtube);
+        } catch (ActivityNotFoundException exception) {
+            Toast.makeText(this, R.string.account_youtube_app_unavailable, Toast.LENGTH_LONG).show();
         }
     }
 
@@ -302,6 +387,9 @@ public final class YouTubeAccountActivity extends Activity {
         }
         changes.apply();
         render(message, false, message == R.string.account_connected);
+        if (message == R.string.account_connected) {
+            showSubscriptions();
+        }
     }
 
     private void showFailure(Exception exception) {

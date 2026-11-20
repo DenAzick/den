@@ -267,7 +267,13 @@ public class BrowserActivity extends Activity {
         home.setTextSize(14);
         home.setTextColor(ACCENT);
         home.setPadding(dp(8), 0, dp(8), 0);
-        home.setOnClickListener(view -> navigate(BrowserAddress.YOUTUBE_HOME));
+        home.setOnClickListener(view -> {
+            if (!isCarActivity() && YouTubeAccountActivity.hasSavedAccount(this)) {
+                openYouTubeAccount(false);
+            } else {
+                navigate(BrowserAddress.YOUTUBE_HOME);
+            }
+        });
         toolbar.addView(home, new LinearLayout.LayoutParams(-2, dp(48)));
 
         if (!isCarActivity()) {
@@ -411,6 +417,12 @@ public class BrowserActivity extends Activity {
                 checkForUpdates(true);
                 return true;
             });
+            if (YouTubeAccountActivity.hasSavedAccount(this)) {
+                menu.getMenu().add(R.string.account_open_youtube_site).setOnMenuItemClickListener(item -> {
+                    navigate(BrowserAddress.YOUTUBE_HOME);
+                    return true;
+                });
+            }
         }
         menu.getMenu().add(isCarActivity() ? R.string.youtube_account_phone : R.string.youtube_account)
                 .setOnMenuItemClickListener(item -> {

@@ -16,6 +16,7 @@ final class BrowserAddress {
             "^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(?::[0-9]+)?(?:[/?#].*)?$");
     private static final Pattern SHARED_LINK = Pattern.compile("https://[^\\s<>\"]+", Pattern.CASE_INSENSITIVE);
     private static final Pattern VIDEO_ID = Pattern.compile("[a-zA-Z0-9_-]{11}");
+    private static final Pattern CHANNEL_ID = Pattern.compile("UC[A-Za-z0-9_-]{22}");
 
     private BrowserAddress() {}
 
@@ -108,6 +109,10 @@ final class BrowserAddress {
 
     static boolean isVideoId(String video) {
         return video != null && VIDEO_ID.matcher(video).matches();
+    }
+
+    static boolean isChannelId(String channel) {
+        return channel != null && CHANNEL_ID.matcher(channel).matches();
     }
 
     private static String youtubeVideoId(String link) {

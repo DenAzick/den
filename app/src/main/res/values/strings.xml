@@ -38,6 +38,13 @@
     <string name="account_empty_list">Здесь пока ничего нет.</string>
     <string name="account_next_page">Ещё</string>
     <string name="account_library_failed">Не удалось загрузить список YouTube. Попробуйте ещё раз.</string>
+    <string name="account_library_loading">Загружаем список YouTube…</string>
+    <string name="account_new_uploads">Новые видео</string>
+    <string name="account_recent_from_subscriptions">Новые видео из подписок</string>
+    <string name="account_more_channels">Ещё каналы</string>
+    <string name="account_recommendations_official">Рекомендации в YouTube</string>
+    <string name="account_youtube_app_unavailable">Официальное приложение YouTube недоступно на телефоне.</string>
+    <string name="account_open_youtube_site">Сайт YouTube</string>
     <string name="parking_show_toolbar">На парковке · Показать панель</string>
     <string name="parking_hide_toolbar">На парковке · Скрыть панель</string>
     <string name="parking_menu_hint">Удерживайте для настроек парковки</string>
