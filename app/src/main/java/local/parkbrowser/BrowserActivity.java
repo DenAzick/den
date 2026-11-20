@@ -53,7 +53,6 @@ import org.json.JSONException;
 public class BrowserActivity extends Activity {
     private static final int OPEN_YOUTUBE_ACCOUNT = 2;
     private static final String ACCOUNT_SCREEN_OPEN = "account_screen_open";
-    private static final String LAUNCHING_FEED = "launching_feed";
     private static final String HIDE_PARKING_TOOLBAR = "hide_parking_toolbar";
     private static final String HIDE_PARKING_LABEL = "hide_parking_label";
     private static final String PHONE_DEMO_MODE = "phone_demo_mode";
@@ -76,7 +75,6 @@ public class BrowserActivity extends Activity {
     private EditText address;
     private Button back;
     private Button parkingControls;
-    private Button browserMenu;
     private ProgressBar progress;
     private WebView webView;
     private SharedPreferences settings;
@@ -91,7 +89,6 @@ public class BrowserActivity extends Activity {
     private boolean checkingForUpdates;
     private boolean updateRequestedManually;
     private boolean accountScreenOpen;
-    private boolean launchingFeed;
     private String carVideoId;
     private String currentUrl = BrowserAddress.YOUTUBE_HOME;
 
@@ -101,7 +98,6 @@ public class BrowserActivity extends Activity {
         settings = getSharedPreferences("parkbrowser_settings", MODE_PRIVATE);
         deviceState = getSharedPreferences("den_device_state", MODE_PRIVATE);
         accountScreenOpen = state != null && state.getBoolean(ACCOUNT_SCREEN_OPEN);
-        launchingFeed = state != null && state.getBoolean(LAUNCHING_FEED);
         if (!settings.contains(HIDE_PARKING_TOOLBAR)) {
             SharedPreferences previous = getSharedPreferences("ParkedBrowserActivity", MODE_PRIVATE);
             if (previous.contains(HIDE_PARKING_TOOLBAR)) {
@@ -131,10 +127,6 @@ public class BrowserActivity extends Activity {
         });
         if (state == null) {
             handleSharedVideo(getIntent());
-            if (!isCarActivity() && Intent.ACTION_MAIN.equals(getIntent().getAction())) {
-                launchingFeed = true;
-                openPhoneLibrary(false, true);
-            }
         }
     }
 
@@ -211,7 +203,6 @@ public class BrowserActivity extends Activity {
         state.putString("url", currentUrl);
         state.putString(SELECTED_VIDEO, carVideoId);
         state.putBoolean(ACCOUNT_SCREEN_OPEN, accountScreenOpen);
-        state.putBoolean(LAUNCHING_FEED, launchingFeed);
         super.onSaveInstanceState(state);
     }
 
@@ -272,23 +263,17 @@ public class BrowserActivity extends Activity {
         go.setOnClickListener(view -> submitAddress());
         toolbar.addView(go, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
-        Button home = button(getString(isCarActivity() ? R.string.home : R.string.feed_tab), null);
+        Button home = button(getString(R.string.home), null);
         home.setTextSize(14);
         home.setTextColor(ACCENT);
         home.setPadding(dp(8), 0, dp(8), 0);
-        home.setOnClickListener(view -> {
-            if (isCarActivity()) {
-                navigate(BrowserAddress.YOUTUBE_HOME);
-            } else {
-                openPhoneLibrary(false, true);
-            }
-        });
+        home.setOnClickListener(view -> navigate(BrowserAddress.YOUTUBE_HOME));
         toolbar.addView(home, new LinearLayout.LayoutParams(-2, dp(48)));
 
         if (!isCarActivity()) {
-            browserMenu = button("⋮", getString(R.string.browser_menu));
-            browserMenu.setOnClickListener(view -> showBrowserMenu(browserMenu));
-            toolbar.addView(browserMenu, new LinearLayout.LayoutParams(dp(48), dp(48)));
+            Button menu = button("⋮", getString(R.string.browser_menu));
+            menu.setOnClickListener(view -> showBrowserMenu(menu));
+            toolbar.addView(menu, new LinearLayout.LayoutParams(dp(48), dp(48)));
         }
         addParkingControls();
 
@@ -436,10 +421,6 @@ public class BrowserActivity extends Activity {
     }
 
     private void openYouTubeAccount(boolean signIn) {
-        openPhoneLibrary(signIn, false);
-    }
-
-    private void openPhoneLibrary(boolean signIn, boolean feed) {
         if (isCarActivity()) {
             showNotice(R.string.account_on_phone);
             return;
@@ -447,8 +428,7 @@ public class BrowserActivity extends Activity {
         if (!accountScreenOpen) {
             accountScreenOpen = true;
             startActivityForResult(new Intent(this, YouTubeAccountActivity.class)
-                    .putExtra(YouTubeAccountActivity.CONNECT_NOW, signIn)
-                    .putExtra(YouTubeAccountActivity.SHOW_FEED, feed), OPEN_YOUTUBE_ACCOUNT);
+                    .putExtra(YouTubeAccountActivity.CONNECT_NOW, signIn), OPEN_YOUTUBE_ACCOUNT);
         }
     }
 
@@ -471,22 +451,12 @@ public class BrowserActivity extends Activity {
             return;
         }
         accountScreenOpen = false;
-        boolean startedFromLauncher = launchingFeed;
-        launchingFeed = false;
         if (!isCarActivity() && resultCode == RESULT_OK && data != null) {
-            if (data.getBooleanExtra(YouTubeAccountActivity.SHOW_BROWSER_MENU, false) && browserMenu != null) {
-                browserMenu.post(() -> showBrowserMenu(browserMenu));
-                return;
-            }
             String destination = data.getDataString();
-            if (BrowserAddress.isHttps(destination)) {
+            if (BrowserAddress.isYouTube(destination)) {
                 navigate(destination);
                 return;
             }
-        }
-        if (startedFromLauncher) {
-            finish();
-            return;
         }
         if (webView != null && isPhoneAccountPage(webView.getUrl()) && !goBack()) {
             navigate(currentUrl);
@@ -604,6 +574,9 @@ public class BrowserActivity extends Activity {
     private Button button(String text, String description) {
         Button button = new Button(this, null, android.R.attr.borderlessButtonStyle);
         button.setText(text);
+        if (!isCarActivity()) {
+            button.setBackgroundResource(R.drawable.phone_button);
+        }
         button.setAllCaps(false);
         button.setTextColor(TEXT);
         button.setTextSize(24);

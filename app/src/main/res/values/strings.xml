@@ -21,7 +21,9 @@
     <string name="account_connect">Подключить аккаунт Google</string>
     <string name="account_checking">Проверяем доступ к YouTube…</string>
     <string name="account_intro">Выберите аккаунт в системном окне Google, чтобы подключить YouTube к den.</string>
+    <string name="account_saved">Сохранённый аккаунт\n%1$s</string>
     <string name="account_connected">YouTube подключён</string>
+    <string name="account_channel">Канал %1$s</string>
     <string name="account_confirm_again">Подтвердите доступ к YouTube повторно.</string>
     <string name="account_failed">Не удалось проверить доступ к YouTube. Попробуйте ещё раз.</string>
     <string name="account_setup_failed">Google отклонил запрос. Проверьте регистрацию den и доступ к YouTube Data API в Google Cloud.</string>
@@ -36,17 +38,6 @@
     <string name="account_empty_list">Здесь пока ничего нет.</string>
     <string name="account_next_page">Ещё</string>
     <string name="account_library_failed">Не удалось загрузить список YouTube. Попробуйте ещё раз.</string>
-    <string name="feed_tab">Лента</string>
-    <string name="feed_recent">Недавние публикации</string>
-    <string name="feed_recent_hint">Видео из ваших подписок YouTube</string>
-    <string name="feed_subscribe_hint">Подключите YouTube, чтобы увидеть видео из своих подписок.</string>
-    <string name="feed_loading">Загружаем видео из подписок…</string>
-    <string name="feed_empty">В выбранных подписках пока нет доступных видео.</string>
-    <string name="feed_profile">Профиль</string>
-    <string name="feed_playlists">Плейлисты</string>
-    <string name="feed_search">Поиск на YouTube</string>
-    <string name="feed_web">Открыть сайт YouTube</string>
-    <string name="feed_load_list">Загружаем список…</string>
     <string name="parking_show_toolbar">На парковке · Показать панель</string>
     <string name="parking_hide_toolbar">На парковке · Скрыть панель</string>
     <string name="parking_menu_hint">Удерживайте для настроек парковки</string>
