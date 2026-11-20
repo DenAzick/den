@@ -27,6 +27,9 @@
     <string name="account_confirm_again">Подтвердите доступ к YouTube повторно.</string>
     <string name="account_failed">Не удалось проверить доступ к YouTube. Попробуйте ещё раз.</string>
     <string name="account_setup_failed">Google отклонил запрос. Проверьте регистрацию den и доступ к YouTube Data API в Google Cloud.</string>
+    <string name="account_api_disabled">Аккаунт сохранён. Для открытия подписок и плейлистов нужно включить YouTube Data API в проекте den.</string>
+    <string name="account_sign_in_interrupted">Вход Google не завершился. Нажмите «Подключить аккаунт Google», чтобы повторить.</string>
+    <string name="account_sign_in_error">Google отклонил вход. Код ошибки %1$d.</string>
     <string name="account_mismatch">Google вернул другой аккаунт. Удалите сохранённую привязку, чтобы подключить его.</string>
     <string name="account_forget">Забыть аккаунт</string>
     <string name="account_subscriptions">Подписки</string>

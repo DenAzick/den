@@ -22,9 +22,15 @@ final class YouTubeAccountApi {
             + "?part=snippet&mine=true&maxResults=1&fields=items%28snippet%28title%29%29");
     private static final int MAX_RESPONSE_BYTES = 128 * 1024;
 
-    record Identity(String subject, String email, String channel) {}
+    record Identity(String subject, String email) {}
     record Item(String id, String title) {}
     record Page(List<Item> items, String next) {}
+
+    static final class ServiceDisabledException extends IOException {
+        ServiceDisabledException() {
+            super("YouTube Data API is disabled for the OAuth project");
+        }
+    }
 
     enum Section {
         SUBSCRIPTIONS("subscriptions", "items(snippet(title,resourceId(channelId)))"),
@@ -51,17 +57,20 @@ final class YouTubeAccountApi {
 
     private YouTubeAccountApi() {}
 
-    static Identity load(String accessToken) throws IOException, JSONException {
+    static Identity loadIdentity(String accessToken) throws IOException, JSONException {
         JSONObject account = read(USER_INFO, accessToken);
         String subject = account.getString("sub");
         String email = account.getString("email");
         if (subject.isBlank() || email.isBlank() || !account.optBoolean("email_verified")) {
             throw new IOException("Google did not return a verified account");
         }
+        return new Identity(subject, email);
+    }
+
+    static String loadChannel(String accessToken) throws IOException, JSONException {
         JSONArray channels = read(YOUTUBE_CHANNEL, accessToken).optJSONArray("items");
-        String title = channels == null || channels.length() == 0 ? ""
+        return channels == null || channels.length() == 0 ? ""
                 : channels.getJSONObject(0).getJSONObject("snippet").getString("title");
-        return new Identity(subject, email, title);
     }
 
     static Page readPage(String accessToken, Section section, String playlistId, String pageToken)
@@ -101,6 +110,9 @@ final class YouTubeAccountApi {
         request.setRequestProperty("Authorization", "Bearer " + accessToken);
         try {
             int status = request.getResponseCode();
+            if (status == 403 && isYouTubeServiceDisabled(request.getErrorStream())) {
+                throw new ServiceDisabledException();
+            }
             if (status != 200) {
                 throw new IOException("Google returned HTTP " + status);
             }
@@ -114,5 +126,30 @@ final class YouTubeAccountApi {
         } finally {
             request.disconnect();
         }
+    }
+
+    private static boolean isYouTubeServiceDisabled(InputStream stream) {
+        if (stream == null) {
+            return false;
+        }
+        try (stream) {
+            byte[] bytes = stream.readNBytes(MAX_RESPONSE_BYTES + 1);
+            if (bytes.length > MAX_RESPONSE_BYTES) {
+                return false;
+            }
+            JSONObject error = new JSONObject(new String(bytes, StandardCharsets.UTF_8)).getJSONObject("error");
+            for (String key : List.of("errors", "details")) {
+                JSONArray entries = error.optJSONArray(key);
+                for (int index = 0; entries != null && index < entries.length(); index++) {
+                    String reason = entries.getJSONObject(index).optString("reason");
+                    if ("accessNotConfigured".equals(reason) || "SERVICE_DISABLED".equals(reason)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (IOException | JSONException ignored) {
+            return false;
+        }
+        return false;
     }
 }

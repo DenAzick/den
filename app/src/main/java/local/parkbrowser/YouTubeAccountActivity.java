@@ -30,6 +30,7 @@ import org.json.JSONException;
 import local.parkbrowser.YouTubeAccountApi.Section;
 
 public final class YouTubeAccountActivity extends Activity {
+    static final String CONNECT_NOW = "local.parkbrowser.CONNECT_NOW";
     private static final int CONSENT_REQUEST = 1;
     private static final String SAVED_SUBJECT = "subject";
     private static final String SAVED_EMAIL = "email";
@@ -58,6 +59,8 @@ public final class YouTubeAccountActivity extends Activity {
             render(R.string.account_checking, true, false);
         } else if (savedEmail() != null) {
             authorize(false);
+        } else if (state == null && getIntent().getBooleanExtra(CONNECT_NOW, false)) {
+            authorize(true);
         } else {
             render(R.string.account_intro, false, false);
         }
@@ -181,8 +184,15 @@ public final class YouTubeAccountActivity extends Activity {
         }
         new Thread(() -> {
             try {
-                var identity = YouTubeAccountApi.load(token);
-                runOnUiThread(() -> remember(identity));
+                var identity = YouTubeAccountApi.loadIdentity(token);
+                try {
+                    String channel = YouTubeAccountApi.loadChannel(token);
+                    runOnUiThread(() -> remember(identity, channel, R.string.account_connected));
+                } catch (YouTubeAccountApi.ServiceDisabledException exception) {
+                    runOnUiThread(() -> remember(identity, null, R.string.account_api_disabled));
+                } catch (IOException | JSONException exception) {
+                    runOnUiThread(() -> remember(identity, null, R.string.account_library_failed));
+                }
             } catch (IOException | JSONException exception) {
                 runOnUiThread(() -> showFailure(exception));
             }
@@ -270,7 +280,7 @@ public final class YouTubeAccountActivity extends Activity {
         finish();
     }
 
-    private void remember(YouTubeAccountApi.Identity identity) {
+    private void remember(YouTubeAccountApi.Identity identity, String channel, int message) {
         if (isFinishing() || isDestroyed()) {
             return;
         }
@@ -279,18 +289,32 @@ public final class YouTubeAccountActivity extends Activity {
             render(R.string.account_mismatch, false, false);
             return;
         }
-        preferences.edit().putString(SAVED_SUBJECT, identity.subject()).putString(SAVED_EMAIL, identity.email())
-                .putString(SAVED_CHANNEL, identity.channel()).apply();
-        render(R.string.account_connected, false, true);
+        SharedPreferences.Editor changes = preferences.edit().putString(SAVED_SUBJECT, identity.subject())
+                .putString(SAVED_EMAIL, identity.email());
+        if (channel != null) {
+            changes.putString(SAVED_CHANNEL, channel);
+        }
+        changes.apply();
+        render(message, false, message == R.string.account_connected);
     }
 
     private void showFailure(Exception exception) {
         if (isFinishing() || isDestroyed()) {
             return;
         }
-        boolean setupError = exception instanceof ApiException api
-                && api.getStatusCode() == CommonStatusCodes.DEVELOPER_ERROR;
-        render(setupError ? R.string.account_setup_failed : R.string.account_failed, false, false);
+        if (exception instanceof ApiException api) {
+            int message = switch (api.getStatusCode()) {
+                case CommonStatusCodes.DEVELOPER_ERROR -> R.string.account_setup_failed;
+                case CommonStatusCodes.CANCELED -> R.string.account_sign_in_interrupted;
+                default -> R.string.account_failed;
+            };
+            render(message, false, false);
+            if (message == R.string.account_failed) {
+                status.setText(getString(R.string.account_sign_in_error, api.getStatusCode()));
+            }
+        } else {
+            render(R.string.account_failed, false, false);
+        }
     }
 
     @Override
@@ -300,12 +324,17 @@ public final class YouTubeAccountActivity extends Activity {
             return;
         }
         waitingForConsent = false;
-        if (resultCode != RESULT_OK || data == null) {
-            render(savedEmail() == null ? R.string.account_intro : R.string.account_confirm_again, false, false);
+        if (data == null) {
+            render(R.string.account_sign_in_interrupted, false, false);
             return;
         }
         try {
-            handleAuthorization(Identity.getAuthorizationClient(this).getAuthorizationResultFromIntent(data), false);
+            AuthorizationResult result = Identity.getAuthorizationClient(this).getAuthorizationResultFromIntent(data);
+            if (resultCode == RESULT_OK) {
+                handleAuthorization(result, false);
+            } else {
+                render(R.string.account_sign_in_interrupted, false, false);
+            }
         } catch (ApiException exception) {
             showFailure(exception);
         }

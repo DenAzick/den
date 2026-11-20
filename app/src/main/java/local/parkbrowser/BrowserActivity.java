@@ -51,6 +51,7 @@ import org.json.JSONException;
 
 public class BrowserActivity extends Activity {
     private static final int OPEN_YOUTUBE_ACCOUNT = 2;
+    private static final String ACCOUNT_SCREEN_OPEN = "account_screen_open";
     private static final String HIDE_PARKING_TOOLBAR = "hide_parking_toolbar";
     private static final String HIDE_PARKING_LABEL = "hide_parking_label";
     private static final String PHONE_DEMO_MODE = "phone_demo_mode";
@@ -86,6 +87,7 @@ public class BrowserActivity extends Activity {
     private boolean resumed;
     private boolean checkingForUpdates;
     private boolean updateRequestedManually;
+    private boolean accountScreenOpen;
     private String carVideoId;
     private String currentUrl = BrowserAddress.YOUTUBE_HOME;
 
@@ -94,6 +96,7 @@ public class BrowserActivity extends Activity {
         super.onCreate(state);
         settings = getSharedPreferences("parkbrowser_settings", MODE_PRIVATE);
         deviceState = getSharedPreferences("den_device_state", MODE_PRIVATE);
+        accountScreenOpen = state != null && state.getBoolean(ACCOUNT_SCREEN_OPEN);
         if (!settings.contains(HIDE_PARKING_TOOLBAR)) {
             SharedPreferences previous = getSharedPreferences("ParkedBrowserActivity", MODE_PRIVATE);
             if (previous.contains(HIDE_PARKING_TOOLBAR)) {
@@ -200,6 +203,7 @@ public class BrowserActivity extends Activity {
     protected void onSaveInstanceState(Bundle state) {
         state.putString("url", currentUrl);
         state.putString(SELECTED_VIDEO, carVideoId);
+        state.putBoolean(ACCOUNT_SCREEN_OPEN, accountScreenOpen);
         super.onSaveInstanceState(state);
     }
 
@@ -411,24 +415,32 @@ public class BrowserActivity extends Activity {
         }
         menu.getMenu().add(isCarActivity() ? R.string.youtube_account_phone : R.string.youtube_account)
                 .setOnMenuItemClickListener(item -> {
-                    openYouTubeAccount();
+                    openYouTubeAccount(false);
                     return true;
                 });
         menu.show();
     }
 
-    private void openYouTubeAccount() {
+    private void openYouTubeAccount(boolean signIn) {
         if (isCarActivity()) {
             showNotice(R.string.account_on_phone);
             return;
         }
-        startActivityForResult(new Intent(this, YouTubeAccountActivity.class), OPEN_YOUTUBE_ACCOUNT);
+        if (!accountScreenOpen) {
+            accountScreenOpen = true;
+            startActivityForResult(new Intent(this, YouTubeAccountActivity.class)
+                    .putExtra(YouTubeAccountActivity.CONNECT_NOW, signIn), OPEN_YOUTUBE_ACCOUNT);
+        }
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (!isCarActivity() && requestCode == OPEN_YOUTUBE_ACCOUNT && resultCode == RESULT_OK && data != null) {
+        if (requestCode != OPEN_YOUTUBE_ACCOUNT) {
+            return;
+        }
+        accountScreenOpen = false;
+        if (!isCarActivity() && resultCode == RESULT_OK && data != null) {
             String destination = data.getDataString();
             if (BrowserAddress.isYouTube(destination)) {
                 navigate(destination);
@@ -611,9 +623,9 @@ public class BrowserActivity extends Activity {
     }
 
     private void navigate(String destination) {
-        if (isGoogleAccountPage(Uri.parse(destination))) {
+        if (BrowserAddress.isGoogleSignIn(destination)) {
             dismissAddressKeyboard();
-            openYouTubeAccount();
+            openYouTubeAccount(true);
             return;
         }
         if (!canOpenPage(destination)) {
@@ -633,10 +645,6 @@ public class BrowserActivity extends Activity {
         InputMethodManager keyboard = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
         keyboard.hideSoftInputFromWindow(address.getWindowToken(), 0);
         address.clearFocus();
-    }
-
-    private boolean isGoogleAccountPage(Uri uri) {
-        return "accounts.google.com".equalsIgnoreCase(uri.getHost());
     }
 
     private boolean canOpenPage(String url) {
@@ -757,8 +765,12 @@ public class BrowserActivity extends Activity {
                 showNotice(R.string.blocked_link);
                 return true;
             }
-            if (isGoogleAccountPage(request.getUrl())) {
-                showNotice(R.string.account_on_phone);
+            if (BrowserAddress.isGoogleSignIn(request.getUrl().toString())) {
+                if (BrowserAddress.isYouTube(view.getUrl())) {
+                    openYouTubeAccount(true);
+                } else {
+                    showNotice(R.string.account_on_phone);
+                }
                 return true;
             }
             if (!canOpenPage(request.getUrl().toString())) {

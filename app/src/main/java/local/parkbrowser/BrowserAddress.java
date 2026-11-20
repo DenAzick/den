@@ -61,6 +61,18 @@ final class BrowserAddress {
         return host.equals("youtube.com") || host.endsWith(".youtube.com") || host.equals("youtu.be");
     }
 
+    static boolean isGoogleSignIn(String value) {
+        if (!isHttps(value)) {
+            return false;
+        }
+        URI address = URI.create(value);
+        if (address.getPort() != -1 && address.getPort() != 443) {
+            return false;
+        }
+        return "accounts.google.com".equalsIgnoreCase(address.getHost())
+                || (isYouTube(value) && "/signin".equals(address.getPath()));
+    }
+
     static String sharedVideoId(CharSequence text) {
         if (text == null || text.length() > 8_192) {
             return null;
