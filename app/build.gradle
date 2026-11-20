@@ -1,18 +1,28 @@
 plugins {
-    id 'com.android.application' version '8.8.2'
+    id 'com.android.application' version '9.3.0'
 }
 
 android {
     namespace = 'local.parkbrowser'
-    compileSdk = 35
-    buildToolsVersion = '35.0.0'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
+    buildToolsVersion = '36.0.0'
 
     defaultConfig {
         applicationId = 'local.parkbrowser'
         minSdk = 35
         targetSdk = 35
-        versionCode = 16
-        versionName = '1.7.2'
+        versionCode = 17
+        versionName = '1.8.0'
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     compileOptions {
@@ -23,4 +33,5 @@ android {
 
 dependencies {
     implementation 'com.google.android.gms:play-services-auth:22.0.0'
+    implementation 'org.mozilla.geckoview:geckoview:160.0.20261116130455'
 }

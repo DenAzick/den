@@ -2,18 +2,18 @@
 
 Личный браузер для Android 15 и новее. Открывает мобильный сайт YouTube, ищет видео по тексту из адресной строки и открывает HTTPS-адреса. Поддерживает полноэкранный режим HTML-видео.
 
-Приложение использует системный Android WebView. Единственное разрешение приложения — доступ к интернету. YouTube и другие открытые сайты обрабатывают запросы и сохраняют данные сайта по своим правилам.
+На телефоне den использует GeckoView, движок Firefox. Парковочный экран использует системный Android WebView. YouTube и другие открытые сайты обрабатывают запросы и сохраняют данные сайта по своим правилам.
 
 ## Аккаунт YouTube и панель парковки
 
-- При запуске и по кнопке **YouTube** открывается мобильный сайт во встроенном браузере den. Нажатие **Войти** на сайте открывает **Мой YouTube** внутри den. Тот же раздел доступен через меню **⋮**.
-- Нажмите канал в подписках, чтобы увидеть его публикации, или выберите **Новые видео**, чтобы просматривать свежие ролики из подписок по группам каналов. Ролики открываются в den. Персональную главную ленту YouTube API не предоставляет. [YouTube Data API](https://developers.google.com/youtube/data/reference/rest/v3/activities/list)
-- При первом подключении подтвердите доступ в системном окне Google. den запоминает аккаунт и дальше использует сохранённый доступ, пока действует разрешение Google. [Авторизация на Android](https://developer.android.com/identity/authorization)
+- При запуске и по кнопке **YouTube** открывается мобильный сайт. Для первого входа выберите **Вы → Войти** на сайте. Страница Google открывается внутри den. В меню **⋮ → Мой YouTube** есть быстрый переход к странице профиля.
+- После входа YouTube показывает рекомендации и подписки вашего аккаунта. den сохраняет веб-сессию в своём профиле. При переходе с версии 1.7.2, при переносе с отдельного прототипа GeckoView или на новом телефоне войдите в Google один раз.
+- В меню **⋮ → Библиотека YouTube через API** доступны списки каналов и плейлистов из предыдущих сборок. Для этого раздела используется отдельное разрешение Google. [Авторизация на Android](https://developer.android.com/identity/authorization)
 - Парковочный экран принимает ссылки YouTube и поисковые запросы. Коснитесь строки **На парковке**, чтобы показать или скрыть панель. Удерживайте строку, чтобы открыть её настройки.
 - Для показа на телефоне выберите **⋮ → Демонстрация на телефоне**. На автомобильном экране в скрытом меню можно убрать надпись **На парковке**, сохранив ограничение Android Auto на движение.
-- den запоминает параметры панели и демонстрации. Android может перенести эти настройки из резервной копии или со старого телефона. На новом телефоне подключите аккаунт в разделе **Мой YouTube**. Команда **Забыть аккаунт** удаляет сохранённую привязку с телефона. Управлять разрешением можно в [настройках аккаунта Google](https://myaccount.google.com/connections).
+- den запоминает параметры панели и демонстрации. Android может перенести эти настройки из резервной копии или со старого телефона. Команда **Забыть аккаунт** в библиотеке через API удаляет сохранённую привязку API. Управлять разрешением можно в [настройках аккаунта Google](https://myaccount.google.com/connections).
 
-### Регистрация доступа к YouTube
+### Регистрация доступа к библиотеке YouTube через API
 
 В Google Cloud включите **YouTube Data API v3** и настройте экран согласия Google Auth Platform. Добавьте разрешения `openid`, `https://www.googleapis.com/auth/userinfo.email` и `https://www.googleapis.com/auth/youtube.readonly`. Для личной проверки добавьте свой Google-аккаунт в список тестовых пользователей. Создайте OAuth-клиент типа **Android** для пакета `local.parkbrowser` с SHA-1 сертификата подписанного APK. SHA-1 показывает `apksigner verify --print-certs dist\den.apk`. [Настройка OAuth для YouTube](https://developers.google.com/youtube/data/guides/authentication) · [Регистрация клиента Android](https://developer.android.com/identity/authorization#set-up-your-google-cloud-console-project)
 
@@ -56,7 +56,7 @@
 
 ## Сборка на Windows
 
-Нужны JDK 17, Android SDK Platform 35 и Android SDK Build Tools 35.0.0. При первой сборке Gradle Wrapper скачивает Gradle, плагин Android и зависимости Google Play Services.
+Нужны JDK 17, Android SDK Platform 37.2 и Android SDK Build Tools 36.0.0. При первой сборке Gradle Wrapper скачивает Gradle, плагин Android, GeckoView и зависимости Google Play Services.
 
 ```powershell
 .\build.ps1
@@ -79,3 +79,5 @@ powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\build.ps1
 Для релиза укажите тег `vX.Y.Z`, соответствующий `versionName` в `app/build.gradle`, увеличьте `versionCode` при выпуске новой версии и добавьте `den.apk` к опубликованному релизу.
 
 Исходный код находится в `app/src/main/java/local/parkbrowser`. Разрешения и точки входа объявлены в `app/src/main/AndroidManifest.xml`.
+
+GeckoView поставляется без изменений из репозитория Mozilla. Версия указана в `app/build.gradle`. [Исходный код GeckoView](https://mozilla.github.io/geckoview/) · [Mozilla Public License 2.0](https://www.mozilla.org/MPL/2.0/)

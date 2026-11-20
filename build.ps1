@@ -8,10 +8,11 @@ $ErrorActionPreference = 'Stop'
 if (-not $SdkPath) {
     $sdkCandidates = @(
         (Join-Path $env:LOCALAPPDATA 'Android\Sdk'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Android\android-sdk')
+        (Join-Path ${env:ProgramFiles(x86)} 'Android\android-sdk'),
+        (Join-Path $PSScriptRoot '.tooling\den-gecko-emulator')
     )
     $SdkPath = $sdkCandidates | Where-Object {
-        Test-Path -LiteralPath (Join-Path $_ 'platforms\android-35\android.jar') -PathType Leaf
+        Test-Path -LiteralPath (Join-Path $_ 'platforms\android-37.2\android.jar') -PathType Leaf
     } | Select-Object -First 1
 }
 
@@ -26,7 +27,7 @@ if (-not $JdkPath) {
 }
 
 if (-not $SdkPath -or -not $JdkPath) {
-    throw 'Set -SdkPath to an Android SDK with Platform 35 and Build Tools 35.0.0, and -JdkPath to JDK 17+.'
+    throw 'Set -SdkPath to an Android SDK with Platform 37.2 and Build Tools 36.0.0, and -JdkPath to JDK 17+.'
 }
 
 function Invoke-BuildTool($Executable, $Arguments) {
@@ -36,8 +37,8 @@ function Invoke-BuildTool($Executable, $Arguments) {
     }
 }
 
-$tools = Join-Path $SdkPath 'build-tools\35.0.0'
-$androidJar = Join-Path $SdkPath 'platforms\android-35\android.jar'
+$tools = Join-Path $SdkPath 'build-tools\36.0.0'
+$androidJar = Join-Path $SdkPath 'platforms\android-37.2\android.jar'
 $zipalign = Join-Path $tools 'zipalign.exe'
 $apksigner = Join-Path $tools 'lib\apksigner.jar'
 $java = Join-Path $JdkPath 'bin\java.exe'
@@ -76,7 +77,7 @@ try {
     }
     Invoke-BuildTool $gradle @('--project-dir', $PSScriptRoot, ':app:assembleRelease', '--no-daemon', '--console=plain')
 
-    Invoke-BuildTool $zipalign @('-f', '4', $unsigned, $aligned)
+    Invoke-BuildTool $zipalign @('-P', '16', '-f', '4', $unsigned, $aligned)
     if (-not (Test-Path -LiteralPath $passwordFile -PathType Leaf)) {
         if (Test-Path -LiteralPath $keystore) {
             throw 'Restore .signing\password.txt for the existing signing key.'
@@ -94,7 +95,7 @@ try {
     Invoke-BuildTool $java @('-jar', $apksigner, 'sign', '--ks', $keystore, '--ks-key-alias', 'parkbrowser',
         '--ks-pass', "file:$passwordFile", '--out', $signed, $aligned)
     Invoke-BuildTool $java @('-jar', $apksigner, 'verify', '--verbose', $signed)
-    Invoke-BuildTool $zipalign @('-c', '4', $signed)
+    Invoke-BuildTool $zipalign @('-c', '-P', '16', '4', $signed)
     Move-Item -LiteralPath $signed -Destination $outputApk -Force
     Get-FileHash -LiteralPath $outputApk -Algorithm SHA256
 } finally {

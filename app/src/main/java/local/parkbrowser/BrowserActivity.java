@@ -45,11 +45,21 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.IOException;
+import java.net.URI;
+import java.util.List;
 import java.util.Map;
 
 import org.json.JSONException;
+import org.mozilla.geckoview.AllowOrDeny;
+import org.mozilla.geckoview.GeckoResult;
+import org.mozilla.geckoview.GeckoRuntime;
+import org.mozilla.geckoview.GeckoSession;
+import org.mozilla.geckoview.GeckoView;
+import org.mozilla.geckoview.MediaSession;
+import org.mozilla.geckoview.WebRequestError;
 
 public class BrowserActivity extends Activity {
+    private static GeckoRuntime geckoRuntime;
     private static final int OPEN_YOUTUBE_ACCOUNT = 2;
     private static final String ACCOUNT_SCREEN_OPEN = "account_screen_open";
     private static final String HIDE_PARKING_TOOLBAR = "hide_parking_toolbar";
@@ -76,6 +86,11 @@ public class BrowserActivity extends Activity {
     private Button parkingControls;
     private ProgressBar progress;
     private WebView webView;
+    private GeckoView phoneView;
+    private GeckoSession phoneSession;
+    private MediaSession phoneMedia;
+    private boolean phoneCanGoBack;
+    private boolean phoneFullscreen;
     private SharedPreferences settings;
     private SharedPreferences deviceState;
     private final SharedPreferences.OnSharedPreferenceChangeListener videoSelection = (preferences, key) -> {
@@ -114,7 +129,9 @@ public class BrowserActivity extends Activity {
         }
         createUi();
         getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, () -> {
-            if (fullscreenCallback != null) {
+            if (phoneFullscreen) {
+                phoneSession.exitFullScreen();
+            } else if (fullscreenCallback != null) {
                 exitFullscreen();
             } else if (carVideoId != null) {
                 carVideoId = null;
@@ -142,8 +159,8 @@ public class BrowserActivity extends Activity {
             return;
         }
         applyToolbarSettings();
-        if (webView == null) {
-            createWebView();
+        if (phoneSession == null) {
+            createPhoneBrowser();
         }
     }
 
@@ -163,6 +180,9 @@ public class BrowserActivity extends Activity {
         if (webView != null) {
             webView.onResume();
         }
+        if (phoneSession != null) {
+            phoneSession.setActive(true);
+        }
         if (!isCarActivity() && !phoneDemoMode()) {
             checkForUpdates(false);
         }
@@ -175,6 +195,14 @@ public class BrowserActivity extends Activity {
             deviceState.unregisterOnSharedPreferenceChangeListener(videoSelection);
         }
         exitFullscreen();
+        if (phoneSession != null) {
+            pausePhoneMedia();
+            if (phoneFullscreen) {
+                phoneSession.exitFullScreen();
+                setPhoneFullscreen(false);
+            }
+            phoneSession.setActive(false);
+        }
         if (webView != null) {
             webView.evaluateJavascript("document.querySelectorAll('audio, video').forEach(el => el.pause());", null);
             webView.onPause();
@@ -194,12 +222,13 @@ public class BrowserActivity extends Activity {
     @Override
     protected void onDestroy() {
         destroyWebView();
+        destroyPhoneBrowser();
         super.onDestroy();
     }
 
     @Override
     protected void onSaveInstanceState(Bundle state) {
-        state.putString("url", currentUrl);
+        state.putString("url", BrowserAddress.isGoogleSignIn(currentUrl) ? BrowserAddress.YOUTUBE_HOME : currentUrl);
         state.putString(SELECTED_VIDEO, carVideoId);
         state.putBoolean(ACCOUNT_SCREEN_OPEN, accountScreenOpen);
         super.onSaveInstanceState(state);
@@ -245,6 +274,14 @@ public class BrowserActivity extends Activity {
         address.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         address.setImeOptions(EditorInfo.IME_ACTION_GO | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         address.setSelectAllOnFocus(true);
+        if (!isCarActivity()) {
+            address.setOnFocusChangeListener((view, focused) -> {
+                address.setText(focused ? currentUrl : URI.create(currentUrl).getRawAuthority());
+                if (focused) {
+                    address.selectAll();
+                }
+            });
+        }
         address.setOnEditorActionListener((text, action, event) -> {
             if (action == EditorInfo.IME_ACTION_GO || (event != null
                     && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
@@ -365,7 +402,7 @@ public class BrowserActivity extends Activity {
         boolean embeddedVideo = carVideoId != null;
         parkingControls.setVisibility(!embeddedVideo && (isCarActivity() || phoneDemoMode()) ? View.VISIBLE : View.GONE);
         setParkingToolbarVisible(!embeddedVideo && (isCarActivity() ? !hideToolbarOnStart() : !phoneDemoMode()));
-        progress.setVisibility(embeddedVideo ? View.GONE : View.INVISIBLE);
+        progress.setVisibility(embeddedVideo || phoneFullscreen ? View.GONE : View.INVISIBLE);
     }
 
     private void showBrowserMenu(View anchor) {
@@ -410,8 +447,12 @@ public class BrowserActivity extends Activity {
                 checkForUpdates(true);
                 return true;
             });
+            menu.getMenu().add(R.string.youtube_account).setOnMenuItemClickListener(item -> {
+                navigate(BrowserAddress.YOUTUBE_HOME + "feed/you");
+                return true;
+            });
         }
-        menu.getMenu().add(isCarActivity() ? R.string.youtube_account_phone : R.string.youtube_account)
+        menu.getMenu().add(isCarActivity() ? R.string.youtube_account_phone : R.string.youtube_account_api)
                 .setOnMenuItemClickListener(item -> {
                     openYouTubeAccount();
                     return true;
@@ -477,9 +518,7 @@ public class BrowserActivity extends Activity {
     }
 
     private void queueVideo(String video) {
-        if (webView != null) {
-            webView.evaluateJavascript("document.querySelectorAll('audio, video').forEach(el => el.pause());", null);
-        }
+        pausePhoneMedia();
         deviceState.edit().putString(SELECTED_VIDEO, video).apply();
         Toast.makeText(this, R.string.video_queued, Toast.LENGTH_SHORT).show();
     }
@@ -603,6 +642,51 @@ public class BrowserActivity extends Activity {
         loadPage();
     }
 
+    private void createPhoneBrowser() {
+        try {
+            if (geckoRuntime == null) {
+                geckoRuntime = GeckoRuntime.create(getApplicationContext());
+            }
+            phoneView = new GeckoView(this);
+            phoneSession = new GeckoSession();
+            PhoneBrowserClient client = new PhoneBrowserClient();
+            phoneSession.setNavigationDelegate(client);
+            phoneSession.setProgressDelegate(client);
+            phoneSession.setContentDelegate(client);
+            phoneSession.setMediaSessionDelegate(client);
+            phoneSession.open(geckoRuntime);
+            phoneView.setSession(phoneSession);
+            page.addView(phoneView, 0, new FrameLayout.LayoutParams(-1, -1));
+            loadPage();
+        } catch (RuntimeException exception) {
+            destroyPhoneBrowser();
+            showError(R.string.geckoview_error);
+        }
+    }
+
+    private void destroyPhoneBrowser() {
+        GeckoSession discarded = phoneSession;
+        phoneSession = null;
+        phoneMedia = null;
+        phoneCanGoBack = false;
+        setPhoneFullscreen(false);
+        if (phoneView != null) {
+            phoneView.releaseSession();
+            page.removeView(phoneView);
+            phoneView = null;
+        }
+        if (discarded != null) {
+            discarded.close();
+            back.setEnabled(false);
+        }
+    }
+
+    private void pausePhoneMedia() {
+        if (phoneMedia != null) {
+            phoneMedia.pause();
+        }
+    }
+
     private void destroyWebView() {
         exitFullscreen();
         if (webView != null) {
@@ -624,7 +708,7 @@ public class BrowserActivity extends Activity {
     }
 
     private void navigate(String destination) {
-        if (BrowserAddress.isGoogleSignIn(destination)) {
+        if (isCarActivity() && BrowserAddress.isGoogleSignIn(destination)) {
             dismissAddressKeyboard();
             handleYouTubeSignIn();
             return;
@@ -635,10 +719,12 @@ public class BrowserActivity extends Activity {
         }
         currentUrl = destination;
         dismissAddressKeyboard();
-        if (webView == null) {
+        if (phoneSession != null || webView != null) {
+            loadPage();
+        } else if (isCarActivity()) {
             createWebView();
         } else {
-            loadPage();
+            createPhoneBrowser();
         }
     }
 
@@ -655,6 +741,11 @@ public class BrowserActivity extends Activity {
     private void loadPage() {
         errorPanel.setVisibility(View.GONE);
         resetNotice();
+        if (phoneSession != null) {
+            updatePhoneAddress();
+            phoneSession.loadUri(currentUrl);
+            return;
+        }
         address.setText(currentUrl);
         webView.getSettings().setMediaPlaybackRequiresUserGesture(carVideoId == null);
         if (carVideoId == null) {
@@ -666,6 +757,12 @@ public class BrowserActivity extends Activity {
     }
 
     private boolean goBack() {
+        if (phoneSession != null && phoneCanGoBack) {
+            errorPanel.setVisibility(View.GONE);
+            resetNotice();
+            phoneSession.goBack();
+            return true;
+        }
         if (webView == null || !webView.canGoBack()) {
             return false;
         }
@@ -680,11 +777,7 @@ public class BrowserActivity extends Activity {
     }
 
     private void handleYouTubeSignIn() {
-        if (!isCarActivity() && resumed && BrowserAddress.isYouTube(currentUrl)) {
-            openYouTubeAccount();
-        } else {
-            showNotice(R.string.account_on_phone);
-        }
+        showNotice(R.string.account_on_phone);
     }
 
     private void showNotice(int message) {
@@ -737,8 +830,158 @@ public class BrowserActivity extends Activity {
         callback.onCustomViewHidden();
     }
 
+    private void setPhoneFullscreen(boolean enabled) {
+        if (phoneFullscreen == enabled) {
+            return;
+        }
+        phoneFullscreen = enabled;
+        WindowInsetsController controller = getWindow().getInsetsController();
+        if (enabled) {
+            toolbar.setVisibility(View.GONE);
+            parkingControls.setVisibility(View.GONE);
+            progress.setVisibility(View.GONE);
+            resetNotice();
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            controller.hide(WindowInsets.Type.systemBars());
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            controller.show(WindowInsets.Type.systemBars());
+            applyToolbarSettings();
+        }
+    }
+
+    private void updatePhoneAddress() {
+        if (!address.hasFocus()) {
+            address.setText(URI.create(currentUrl).getRawAuthority());
+        }
+    }
+
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private final class PhoneBrowserClient implements GeckoSession.NavigationDelegate,
+            GeckoSession.ProgressDelegate, GeckoSession.ContentDelegate, MediaSession.Delegate {
+        @Override
+        public GeckoResult<AllowOrDeny> onLoadRequest(GeckoSession session, LoadRequest request) {
+            if (session != phoneSession) {
+                return GeckoResult.deny();
+            }
+            if (!BrowserAddress.isHttps(request.uri)) {
+                showNotice(R.string.blocked_link);
+                return GeckoResult.deny();
+            }
+            if (request.target == TARGET_WINDOW_NEW) {
+                if (request.hasUserGesture) {
+                    session.loadUri(request.uri);
+                }
+                return GeckoResult.deny();
+            }
+            return GeckoResult.allow();
+        }
+
+        @Override
+        public void onLocationChange(GeckoSession session, String url,
+                List<GeckoSession.PermissionDelegate.ContentPermission> permissions, Boolean hasUserGesture) {
+            if (session == phoneSession && BrowserAddress.isHttps(url)) {
+                currentUrl = url;
+                updatePhoneAddress();
+            }
+        }
+
+        @Override
+        public void onCanGoBack(GeckoSession session, boolean available) {
+            if (session == phoneSession) {
+                phoneCanGoBack = available;
+                back.setEnabled(available);
+            }
+        }
+
+        @Override
+        public void onPageStart(GeckoSession session, String url) {
+            if (session == phoneSession) {
+                address.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0);
+                if (BrowserAddress.isHttps(url)) {
+                    currentUrl = url;
+                    updatePhoneAddress();
+                    errorPanel.setVisibility(View.GONE);
+                    resetNotice();
+                }
+            }
+        }
+
+        @Override
+        public void onSecurityChange(GeckoSession session, SecurityInformation security) {
+            if (session == phoneSession) {
+                address.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                        security.isSecure ? android.R.drawable.ic_lock_lock : 0, 0, 0, 0);
+            }
+        }
+
+        @Override
+        public void onProgressChange(GeckoSession session, int percent) {
+            if (session == phoneSession && !phoneFullscreen) {
+                progress.setProgress(percent);
+                progress.setVisibility(percent < 100 && errorPanel.getVisibility() != View.VISIBLE
+                        ? View.VISIBLE : View.INVISIBLE);
+            }
+        }
+
+        @Override
+        public GeckoResult<String> onLoadError(GeckoSession session, String url, WebRequestError error) {
+            if (session == phoneSession) {
+                showError(error.category == WebRequestError.ERROR_CATEGORY_SECURITY
+                        ? R.string.certificate_error : R.string.load_error);
+            }
+            return GeckoResult.fromValue(null);
+        }
+
+        @Override
+        public void onFullScreen(GeckoSession session, boolean enabled) {
+            if (session != phoneSession) {
+                return;
+            }
+            if (enabled && !resumed) {
+                session.exitFullScreen();
+                return;
+            }
+            setPhoneFullscreen(enabled);
+        }
+
+        @Override
+        public void onCrash(GeckoSession session) {
+            if (session == phoneSession) {
+                destroyPhoneBrowser();
+                showError(R.string.renderer_error);
+            }
+        }
+
+        @Override
+        public void onKill(GeckoSession session) {
+            onCrash(session);
+        }
+
+        @Override
+        public void onActivated(GeckoSession session, MediaSession media) {
+            if (session == phoneSession) {
+                phoneMedia = media;
+            }
+        }
+
+        @Override
+        public void onDeactivated(GeckoSession session, MediaSession media) {
+            if (session == phoneSession && media == phoneMedia) {
+                phoneMedia = null;
+            }
+        }
+
+        @Override
+        public void onPlay(GeckoSession session, MediaSession media) {
+            if (session == phoneSession && !resumed) {
+                media.pause();
+            }
+        }
     }
 
     private final class BrowserClient extends WebViewClient {

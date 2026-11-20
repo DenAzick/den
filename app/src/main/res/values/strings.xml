@@ -12,10 +12,12 @@
     <string name="load_error">Страница не загрузилась. Проверьте интернет и попробуйте снова.</string>
     <string name="certificate_error">Ошибка сертификата. Страница заблокирована.</string>
     <string name="webview_error">Не удалось запустить Android WebView. Проверьте обновления Android System WebView и перезапустите приложение.</string>
+    <string name="geckoview_error">Не удалось запустить браузер. Попробуйте снова.</string>
     <string name="renderer_error">Страница закрылась из-за ошибки WebView.</string>
     <string name="retry">Повторить</string>
     <string name="browser_menu">Меню браузера</string>
     <string name="youtube_account">Мой YouTube</string>
+    <string name="youtube_account_api">Библиотека YouTube через API</string>
     <string name="youtube_account_phone">Мой YouTube на телефоне</string>
     <string name="account_on_phone">Для подключения аккаунта откройте «Мой YouTube» в меню den на телефоне.</string>
     <string name="account_connect">Подключить аккаунт Google</string>
