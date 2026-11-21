@@ -18,8 +18,10 @@ import android.net.http.SslError;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Display;
+import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -68,8 +70,10 @@ public class BrowserActivity extends Activity {
     private static final String HIDE_PARKING_LABEL = "hide_parking_label";
     private static final String PHONE_DEMO_MODE = "phone_demo_mode";
     private static final String SELECTED_VIDEO = "selected_video";
+    private static final String CAR_VIDEO_FULLSCREEN = "car_video_fullscreen";
     private static final String LAST_UPDATE_CHECK = "last_update_check";
     private static final long UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1_000L;
+    private static final long FULLSCREEN_EXIT_TIMEOUT_MS = 3_000L;
     private static final int SURFACE = Color.rgb(17, 28, 29);
     private static final int CONTROL = Color.rgb(32, 52, 53);
     private static final int TEXT = Color.rgb(241, 250, 247);
@@ -80,6 +84,9 @@ public class BrowserActivity extends Activity {
     private LinearLayout toolbar;
     private FrameLayout page;
     private FrameLayout fullscreen;
+    private Button fullscreenExit;
+    private GestureDetector fullscreenTouch;
+    private final Runnable fullscreenExitTimeout = this::hideFullscreenExit;
     private LinearLayout errorPanel;
     private TextView errorText;
     private TextView notice;
@@ -108,6 +115,7 @@ public class BrowserActivity extends Activity {
     private boolean updateRequestedManually;
     private boolean accountScreenOpen;
     private String carVideoId;
+    private boolean carVideoFullscreen;
     private String currentUrl = BrowserAddress.YOUTUBE_HOME;
 
     @Override
@@ -129,15 +137,15 @@ public class BrowserActivity extends Activity {
             String previousVideo = state.getString(SELECTED_VIDEO);
             if (isCarActivity() && BrowserAddress.isVideoId(previousVideo)) {
                 carVideoId = previousVideo;
+                carVideoFullscreen = state.getBoolean(CAR_VIDEO_FULLSCREEN, true);
             }
         }
         createUi();
         getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, () -> {
-            if (phoneFullscreen) {
-                phoneSession.exitFullScreen();
-            } else if (fullscreenCallback != null) {
-                exitFullscreen();
-            } else if (carVideoId != null) {
+            if (leaveFullscreenMode()) {
+                return;
+            }
+            if (carVideoId != null) {
                 carVideoId = null;
                 applyToolbarSettings();
                 navigate(currentUrl);
@@ -154,6 +162,15 @@ public class BrowserActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         handleSharedVideo(intent);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (fullscreenTouch != null && isFullscreen()) {
+            // Observe taps without taking the video player's own controls away from it.
+            fullscreenTouch.onTouchEvent(event);
+        }
+        return super.dispatchTouchEvent(event);
     }
 
     @Override
@@ -199,6 +216,7 @@ public class BrowserActivity extends Activity {
     @Override
     protected void onPause() {
         resumed = false;
+        hideFullscreenExit();
         if (isCarActivity()) {
             if (foregroundCarBrowser == this) {
                 foregroundCarBrowser = null;
@@ -242,6 +260,7 @@ public class BrowserActivity extends Activity {
     protected void onSaveInstanceState(Bundle state) {
         state.putString("url", BrowserAddress.isGoogleSignIn(currentUrl) ? BrowserAddress.YOUTUBE_HOME : currentUrl);
         state.putString(SELECTED_VIDEO, carVideoId);
+        state.putBoolean(CAR_VIDEO_FULLSCREEN, carVideoFullscreen);
         state.putBoolean(ACCOUNT_SCREEN_OPEN, accountScreenOpen);
         super.onSaveInstanceState(state);
     }
@@ -345,6 +364,27 @@ public class BrowserActivity extends Activity {
         fullscreen.setBackgroundColor(Color.BLACK);
         fullscreen.setVisibility(View.GONE);
         root.addView(fullscreen, new FrameLayout.LayoutParams(-1, -1));
+
+        fullscreenExit = button("×", getString(R.string.exit_fullscreen));
+        fullscreenExit.setTooltipText(getString(R.string.exit_fullscreen));
+        fullscreenExit.setBackground(rounded(0xE6203435, 10));
+        fullscreenExit.setOnClickListener(view -> leaveFullscreenMode());
+        fullscreenExit.setVisibility(View.GONE);
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.END);
+        closeParams.setMargins(dp(8), dp(56), dp(8), dp(8));
+        root.addView(fullscreenExit, closeParams);
+        fullscreenTouch = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onDown(MotionEvent event) {
+                return true;
+            }
+
+            @Override
+            public boolean onSingleTapUp(MotionEvent event) {
+                showFullscreenExit();
+                return true;
+            }
+        });
         setContentView(root);
         toolbar.requestFocus();
     }
@@ -411,10 +451,13 @@ public class BrowserActivity extends Activity {
     }
 
     private void applyToolbarSettings() {
-        boolean embeddedVideo = carVideoId != null;
-        parkingControls.setVisibility(!embeddedVideo && (isCarActivity() || phoneDemoMode()) ? View.VISIBLE : View.GONE);
-        setParkingToolbarVisible(!embeddedVideo && (isCarActivity() ? !hideToolbarOnStart() : !phoneDemoMode()));
-        progress.setVisibility(embeddedVideo || phoneFullscreen ? View.GONE : View.INVISIBLE);
+        boolean fullPageVideo = phoneFullscreen || carVideoFullscreen;
+        parkingControls.setVisibility(!fullPageVideo && (isCarActivity() || phoneDemoMode()) ? View.VISIBLE : View.GONE);
+        setParkingToolbarVisible(!fullPageVideo && (isCarActivity() ? !hideToolbarOnStart() : !phoneDemoMode()));
+        progress.setVisibility(carVideoId != null || phoneFullscreen ? View.GONE : View.INVISIBLE);
+        if (!isFullscreen()) {
+            hideFullscreenExit();
+        }
     }
 
     private void showBrowserMenu(View anchor) {
@@ -548,6 +591,8 @@ public class BrowserActivity extends Activity {
         deviceState.edit().remove(SELECTED_VIDEO).apply();
         exitFullscreen();
         carVideoId = video;
+        carVideoFullscreen = true;
+        hideFullscreenExit();
         currentUrl = BrowserAddress.YOUTUBE_HOME + "watch?v=" + video;
         applyToolbarSettings();
         if (webView == null) {
@@ -836,21 +881,49 @@ public class BrowserActivity extends Activity {
         errorPanel.setVisibility(View.VISIBLE);
     }
 
+    private boolean leaveFullscreenMode() {
+        if (phoneFullscreen) {
+            phoneSession.exitFullScreen();
+        } else if (fullscreenCallback != null) {
+            exitFullscreen();
+        } else if (carVideoFullscreen) {
+            carVideoFullscreen = false;
+            applyToolbarSettings();
+        } else {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isFullscreen() {
+        return phoneFullscreen || carVideoFullscreen || fullscreenCallback != null;
+    }
+
+    private void showFullscreenExit() {
+        fullscreenExit.removeCallbacks(fullscreenExitTimeout);
+        fullscreenExit.setVisibility(View.VISIBLE);
+        fullscreenExit.postDelayed(fullscreenExitTimeout, FULLSCREEN_EXIT_TIMEOUT_MS);
+    }
+
+    private void hideFullscreenExit() {
+        fullscreenExit.removeCallbacks(fullscreenExitTimeout);
+        fullscreenExit.setVisibility(View.GONE);
+    }
+
     private void enterFullscreen(View video, WebChromeClient.CustomViewCallback callback) {
         if (!resumed || fullscreenCallback != null) {
             callback.onCustomViewHidden();
             return;
         }
         fullscreenCallback = callback;
+        if (carVideoFullscreen) {
+            carVideoFullscreen = false;
+            applyToolbarSettings();
+        }
         fullscreen.addView(video, new FrameLayout.LayoutParams(-1, -1));
-        Button close = button("×", getString(R.string.exit_fullscreen));
-        close.setBackground(rounded(0xCC203435, 10));
-        close.setOnClickListener(view -> exitFullscreen());
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.END);
-        closeParams.setMargins(dp(8), dp(8), dp(8), dp(8));
-        fullscreen.addView(close, closeParams);
         browserUi.setVisibility(View.INVISIBLE);
         fullscreen.setVisibility(View.VISIBLE);
+        hideFullscreenExit();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (!isCarActivity()) {
             WindowInsetsController controller = getWindow().getInsetsController();
@@ -868,6 +941,7 @@ public class BrowserActivity extends Activity {
         fullscreen.removeAllViews();
         fullscreen.setVisibility(View.GONE);
         browserUi.setVisibility(View.VISIBLE);
+        hideFullscreenExit();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (!isCarActivity()) {
             getWindow().getInsetsController().show(WindowInsets.Type.systemBars());
@@ -880,11 +954,9 @@ public class BrowserActivity extends Activity {
             return;
         }
         phoneFullscreen = enabled;
+        hideFullscreenExit();
         WindowInsetsController controller = getWindow().getInsetsController();
         if (enabled) {
-            toolbar.setVisibility(View.GONE);
-            parkingControls.setVisibility(View.GONE);
-            progress.setVisibility(View.GONE);
             resetNotice();
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
@@ -892,8 +964,8 @@ public class BrowserActivity extends Activity {
         } else {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             controller.show(WindowInsets.Type.systemBars());
-            applyToolbarSettings();
         }
+        applyToolbarSettings();
     }
 
     private void updatePhoneAddress() {
@@ -1068,6 +1140,7 @@ public class BrowserActivity extends Activity {
             }
             if (carVideoId != null && !("/embed/" + carVideoId).equals(Uri.parse(url).getPath())) {
                 carVideoId = null;
+                carVideoFullscreen = false;
                 applyToolbarSettings();
                 view.getSettings().setMediaPlaybackRequiresUserGesture(true);
             }
