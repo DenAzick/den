@@ -92,6 +92,16 @@ final class BrowserAddress {
         return video != null && VIDEO_ID.matcher(video).matches();
     }
 
+    static boolean isYouTubeWatchLink(String url, String video) {
+        if (url.startsWith("http://")) {
+            url = "https://" + url.substring("http://".length());
+        }
+        if (!isYouTube(url)) {
+            return false;
+        }
+        return "/watch".equals(URI.create(url).getPath()) && video.equals(youtubeVideoId(url));
+    }
+
     static boolean isChannelId(String channel) {
         return channel != null && CHANNEL_ID.matcher(channel).matches();
     }
